@@ -1,24 +1,48 @@
 <odoo>
-    <data>
-<!--
-        <template id="listing">
-          <ul>
-            <li t-foreach="objects" t-as="object">
-              <a t-attf-href="#{ root }/objects/#{ object.id }">
-                <t t-esc="object.display_name"/>
-              </a>
-            </li>
-          </ul>
-        </template>
-        <template id="object">
-          <h1><t t-esc="object.display_name"/></h1>
-          <dl>
-            <t t-foreach="object._fields" t-as="field">
-              <dt><t t-esc="field"/></dt>
-              <dd><t t-esc="object[field]"/></dd>
-            </t>
-          </dl>
-        </template>
--->
-    </data>
+
+  <!-- Vista tipo lista -->
+  <record id="student_list_view" model="ir.ui.view">
+    <field name="name">student.list.view</field> <!-- CAMBIO: antes decía "tree.view", ahora
+    "list.view" -->
+    <field name="model">school.student</field>
+    <field name="arch" type="xml">
+      <list> <!-- CAMBIO: antes era <tree>, ahora <list> -->
+        <field name="name" />
+        <field name="age" />
+      </list>
+    </field>
+  </record>
+
+  <!-- Vista tipo formulario -->
+  <record id="student_form_view" model="ir.ui.view">
+    <field name="name">student.form.view</field> <!-- CORREGIDO: antes estaba escrito
+    "student_from_view" en el id -->
+    <field name="model">school.student</field>
+    <field name="arch" type="xml">
+      <form>
+        <sheet>
+          <group>
+            <field name="name" />
+            <field name="age" /> <!-- CAMBIO: agrupé ambos campos en el mismo grupo para simplificar -->
+          </group>
+        </sheet>
+      </form>
+    </field>
+  </record>
+
+  <!-- Acción -->
+  <record id="student_action" model="ir.actions.act_window">
+    <field name="name">Students</field>
+    <field name="res_model">school.student</field>
+    <field name="view_mode">list,form</field> <!-- CAMBIO: antes decía "tree,form", ahora "list,form" -->
+  </record>
+
+  <!-- Menús -->
+  <menuitem id="menu_root" name="School" />
+  <menuitem id="menu_students" name="Students" parent="menu_root" />
+  <menuitem id="menu_students_list"
+    name="Students list"
+    parent="menu_students"
+    action="student_action" />
+
 </odoo>
