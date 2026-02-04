@@ -14,7 +14,7 @@ class ResPartnerConstrain(models.Model):
                              ], limit= 1)
                 if existing_email :
                     raise ValidationError(
-                        _('a contact with the same email its been register already')
+                        _('A contact with the same email its been register already')
                          )
             
             if record.phone:
@@ -23,7 +23,7 @@ class ResPartnerConstrain(models.Model):
                                              limit=1)
                 if existing_phone:
                     raise ValidationError(
-                        _('a contact with the same phone already exist')
+                        _('A contact with the same phone already exist')
                     )
             
                 
