@@ -15,7 +15,6 @@ import { Input } from "@point_of_sale/app/generic_components/inputs/input/input"
 import { isBarcodeScannerSupported } from "@web/core/barcode/barcode_video_scanner";
 import { Dropdown } from "@web/core/dropdown/dropdown";
 import { DropdownItem } from "@web/core/dropdown/dropdown_item";
-import { user } from "@web/core/user";
 import { OrderTabs } from "@point_of_sale/app/components/order_tabs/order_tabs";
 import { openCustomerDisplay } from "@point_of_sale/customer_display/utils";
 import { _t } from "@web/core/l10n/translation";
@@ -44,7 +43,7 @@ export class Navbar extends Component {
         this.isDisplayStandalone = isDisplayStandalone();
         this.isBarcodeScannerSupported = isBarcodeScannerSupported;
         onMounted(async () => {
-            this.isSystemUser = await user.hasGroup("base.group_system");
+            this.hasProductCreationAccess = await this.pos.allowProductCreation();
         });
     }
     onClickScan() {
@@ -58,7 +57,7 @@ export class Navbar extends Component {
         return this.pos.config.customer_display_type !== "none" && !isMobileOS();
     }
     get showCashMoveButton() {
-        return Boolean(this.pos.config.cash_control);
+        return Boolean(this.pos.config.cash_control && this.pos.session._has_cash_move_perm);
     }
     async clearCache() {
         await this.pos.data.resetIndexedDB();
@@ -114,7 +113,7 @@ export class Navbar extends Component {
     }
 
     get showCreateProductButton() {
-        return this.isSystemUser;
+        return this.hasProductCreationAccess;
     }
 
     async showSaleDetails() {

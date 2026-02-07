@@ -54,6 +54,12 @@ class AccountEdiXmlUBL21(models.AbstractModel):
             'pint_jp': 'urn:peppol:pint:billing-1@jp-1',
             'pint_sg': 'urn:peppol:pint:billing-1@sg-1',
             'pint_my': 'urn:peppol:pint:billing-1@my-1',
+            'oioubl_21': 'OIOUBL-2.1',
+        }
+
+    def _get_selfbilling_customization_ids(self):
+        return {
+            'ubl_bis3': 'urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:selfbilling:3.0'
         }
 
     # -------------------------------------------------------------------------

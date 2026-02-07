@@ -80,6 +80,18 @@ class account_journal(models.Model):
 
         (self - bank_cash_journals - sale_purchase_journals).kanban_dashboard_graph = False
 
+    def _transform_activity_dict(self, activity_data):
+        return {
+            'id': activity_data['id'],
+            'res_id': activity_data['res_id'],
+            'res_model': activity_data['res_model'],
+            'status': activity_data['status'],
+            'name': activity_data['summary'] or activity_data['act_type_name'],
+            'activity_category': activity_data['activity_category'],
+            'act_type_id': activity_data['act_type_id'],
+            'date': odoo_format_date(self.env, activity_data['date_deadline']),
+        }
+
     def _get_json_activity_data(self):
         today = fields.Date.context_today(self)
         activities = defaultdict(list)
@@ -92,6 +104,7 @@ class account_journal(models.Model):
                 activity.res_model,
                 activity.summary,
       CASE WHEN activity.date_deadline < %(today)s THEN 'late' ELSE 'future' END as status,
+                act_type.id as act_type_id,
                 %(act_type_name)s as act_type_name,
                 act_type.category as activity_category,
                 activity.date_deadline,
@@ -109,6 +122,7 @@ class account_journal(models.Model):
                 activity.res_model,
                 activity.summary,
       CASE WHEN activity.date_deadline < %(today)s THEN 'late' ELSE 'future' END as status,
+                act_type.id as act_type_id,
                 %(act_type_name)s as act_type_name,
                 act_type.category as activity_category,
                 activity.date_deadline,
@@ -125,18 +139,8 @@ class account_journal(models.Model):
             company_ids=self.env.companies.ids,
         )
         self.env.cr.execute(sql_query)
-        for activity in self.env.cr.dictfetchall():
-            act = {
-                'id': activity['id'],
-                'res_id': activity['res_id'],
-                'res_model': activity['res_model'],
-                'status': activity['status'],
-                'name': activity['summary'] or activity['act_type_name'],
-                'activity_category': activity['activity_category'],
-                'date': odoo_format_date(self.env, activity['date_deadline'])
-            }
-
-            activities[activity['journal_id']].append(act)
+        for activity_data in self.env.cr.dictfetchall():
+            activities[activity_data['journal_id']].append(self._transform_activity_dict(activity_data))
         for journal in self:
             journal.json_activity_data = json.dumps({'activities': activities[journal.id]})
 
@@ -274,12 +278,11 @@ class account_journal(models.Model):
               JOIN account_move move ON move.id = st_line.move_id
              WHERE move.journal_id = ANY(%s)
                AND move.date > %s
-               AND move.date <= %s
                AND move.company_id = ANY(%s)
           GROUP BY move.date, move.journal_id
           ORDER BY move.date DESC
         """
-        self.env.cr.execute(query, (self.ids, last_month, today, self.env.companies.ids))
+        self.env.cr.execute(query, (self.ids, last_month, self.env.companies.ids))
         query_result = group_by_journal(self.env.cr.dictfetchall())
 
         result = {}
@@ -300,15 +303,16 @@ class account_journal(models.Model):
                     graph_key = _('Sample data')
             else:
                 last_balance = journal.current_statement_balance
-                data.append(build_graph_data(today, last_balance, currency))
+                # Make sure the last point in the graph is at least today or a future date
+                if not journal_result or journal_result[0]['date'] < today.date():
+                    data.append(build_graph_data(today, last_balance, currency))
                 date = today
                 amount = last_balance
                 #then we subtract the total amount of bank statement lines per day to get the previous points
                 #(graph is drawn backward)
                 for val in journal_result:
                     date = val['date']
-                    if date.strftime(DF) != today.strftime(DF):  # make sure the last point in the graph is today
-                        data[:0] = [build_graph_data(date, amount, currency)]
+                    data[:0] = [build_graph_data(date, amount, currency)]
                     amount -= val['amount']
 
                 # make sure the graph starts 1 month ago
@@ -734,6 +738,7 @@ class account_journal(models.Model):
             *self.env['account.move']._check_company_domain(self.env.companies),
             ('journal_id', 'in', self.ids),
             ('checked', '=', False),
+            ('state', '=', 'posted'),
         ])
 
     def _count_results_and_sum_amounts(self, results_dict, target_currency):
@@ -893,23 +898,25 @@ class account_journal(models.Model):
                 journal_types=', '.join(journal_types),
             )
 
+    @api.model
+    def is_sample_action_available(self):
+        """Used to hide 'try our sample' when demo data is not installed."""
+        return bool(self.env.ref('base.res_partner_2', raise_if_not_found=False))
+
     def action_create_vendor_bill(self):
         """ This function is called by the "try our sample" button of Vendor Bills,
         visible on dashboard if no bill has been created yet.
         """
         context = dict(self._context)
         purchase_journal = self.browse(context.get('default_journal_id')) or self.search([('type', '=', 'purchase')], limit=1)
+        partner = self.env.ref('base.res_partner_2', raise_if_not_found=False)
         if not purchase_journal:
             raise UserError(self._build_no_journal_error_msg(self.env.company.display_name, ['purchase']))
+        if not partner:
+            raise UserError(_('You may only use samples in demo mode, try uploading one of your invoices instead.'))
         context['default_move_type'] = 'in_invoice'
         invoice_date = fields.Date.today() - timedelta(days=12)
-        partner = self.env['res.partner'].search([('name', '=', 'Deco Addict')], limit=1)
         company = purchase_journal.company_id
-        if not partner:
-            partner = self.env['res.partner'].create({
-                'name': 'Deco Addict',
-                'is_company': True,
-            })
         ProductCategory = self.env['product.category'].with_company(company)
         default_expense_account = ProductCategory._fields['property_account_expense_categ_id'].get_company_dependent_fallback(ProductCategory)
         ref = 'DE%s' % invoice_date.strftime('%Y%m')
@@ -1027,7 +1034,7 @@ class account_journal(models.Model):
             action['domain'] = ast.literal_eval(action['domain'] or '[]')
         if not self._context.get('action_name'):
             if self.type == 'sale':
-                action['domain'] = [(domain_type_field, 'in', ('out_invoice', 'out_refund', 'out_receipt'))]
+                action['domain'] = [(domain_type_field, 'in', ('out_invoice', 'out_refund', 'out_receipt', 'entry'))]
             elif self.type == 'purchase':
                 action['domain'] = [(domain_type_field, 'in', ('in_invoice', 'in_refund', 'in_receipt', 'entry'))]
 

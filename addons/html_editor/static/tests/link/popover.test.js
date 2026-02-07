@@ -24,7 +24,7 @@ import { expectElementCount } from "../_helpers/ui_expectations";
 const base64Img =
     "data:image/png;base64, iVBORw0KGgoAAAANSUhEUgAAAAUA\n        AAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO\n            9TXL0Y4OHwAAAABJRU5ErkJggg==";
 
-describe("should open a popover", () => {
+describe("should open or close a popover", () => {
     test("should open a popover when the selection is inside a link and close outside of a link", async () => {
         const { el } = await setupEditor("<p>this is a <a>link</a></p>");
         await expectElementCount(".o-we-linkpopover", 0);
@@ -34,6 +34,19 @@ describe("should open a popover", () => {
         // selection outside a link
         setContent(el, "<p>this []is a <a>link</a></p>");
         await expectElementCount(".o-we-linkpopover", 0);
+    });
+    test("should pad new created links and close a popover, remove empty link when press esc", async () => {
+        const { el } = await setupEditor("<p>[Hello]</p>");
+        await waitFor(".o-we-toolbar");
+        await click(".o-we-toolbar .fa-link");
+        await waitFor(".o-we-linkpopover", { timeout: 1500 });
+        expect(getContent(el)).toBe(
+            '<p>\ufeff<a class="o_link_in_selection">\ufeffHello\ufeff</a>\ufeff</p>'
+        );
+        await press("escape");
+        await animationFrame();
+        await expectElementCount(".o-we-linkpopover", 0);
+        expect(cleanLinkArtifacts(getContent(el))).toBe("<p>Hello</p>");
     });
     test("link popover should have input field for href when the link doesn't have href", async () => {
         await setupEditor("<p>this is a <a>li[]nk</a></p>");
@@ -153,6 +166,19 @@ describe("popover should edit,copy,remove the link", () => {
         await click(".o_we_apply_link");
         expect(cleanLinkArtifacts(getContent(el))).toBe(
             '<p>this is a <a href="http://test.com/">linknew[]</a></p>'
+        );
+    });
+    test("after edit the label, the text of the link should be updated (2)", async () => {
+        const { el } = await setupEditor(
+            '<p>this is a <a class="text-wrap" href="http://test.com/">li[]nk</a></p>'
+        );
+        await waitFor(".o-we-linkpopover");
+        await click(".o_we_edit_link");
+
+        await contains(".o-we-linkpopover input.o_we_label_link").fill("new");
+        await click(".o_we_apply_link");
+        expect(cleanLinkArtifacts(getContent(el))).toBe(
+            '<p>this is a <a class="text-wrap o_link_in_selection" href="http://test.com/">linknew[]</a></p>'
         );
     });
     test("when the label is empty, it should be set as the URL", async () => {
@@ -656,7 +682,7 @@ describe("link preview", () => {
             description: markup("Test description"),
             link_preview_name: "Task name | Project name",
         }));
-        onRpc("/odoo/project/1/tasks/8", () => "", { pure: true });
+        onRpc("/odoo/project/1/tasks/8", () => "");
         const { editor, el } = await setupEditor(`<p>[]</p>`);
         await insertText(editor, "/link");
         await animationFrame();
@@ -706,7 +732,7 @@ describe("link preview", () => {
                 link_preview_name: "Task name | Project name",
             };
         });
-        onRpc("/odoo/cachetest/8", () => "", { pure: true });
+        onRpc("/odoo/cachetest/8", () => "");
         const { editor } = await setupEditor(`<p>abc[]</p>`);
         await insertText(editor, "/link");
         await animationFrame();
@@ -747,15 +773,11 @@ describe("link preview", () => {
         });
 
         const currentProtocol = window.location.protocol;
-        onRpc(
-            "/odoo/cachetest/8",
-            (request) => {
-                const urlProtocol = new URL(request.url).protocol;
-                expect(urlProtocol).toBe(currentProtocol);
-                return "";
-            },
-            { pure: true }
-        );
+        onRpc("/odoo/cachetest/8", (request) => {
+            const urlProtocol = new URL(request.url).protocol;
+            expect(urlProtocol).toBe(currentProtocol);
+            return "";
+        });
 
         const { editor } = await setupEditor(`<p>abc[]</p>`);
         await insertText(editor, "/link");
@@ -790,13 +812,15 @@ describe("link preview", () => {
         expect.verifySteps([]);
     });
     test("test external metadata cached correctly", async () => {
+        const title = "Open Source ERP and CRM | Odoo";
+        const description =
+            "From ERP to CRM, eCommerce and CMS. Download Odoo or use it in the cloud. Grow Your Business.";
         onRpc("/html_editor/link_preview_external", () => {
             expect.step("/html_editor/link_preview_external");
             return {
-                og_description:
-                    "From ERP to CRM, eCommerce and CMS. Download Odoo or use it in the cloud. Grow Your Business.",
+                og_description: description,
                 og_image: "https://www.odoo.com/web/image/41207129-1abe7a15/homepage-seo.png",
-                og_title: "Open Source ERP and CRM | Odoo",
+                og_title: title,
                 og_type: "website",
                 og_site_name: "Odoo",
                 source_url: "http://odoo.com/",
@@ -809,7 +833,9 @@ describe("link preview", () => {
         await contains(".o-we-linkpopover input.o_we_href_input_link").fill("http://odoo.com/");
         await animationFrame();
         expect.verifySteps(["/html_editor/link_preview_external"]);
-        expect(".o_we_url_link").toHaveText("Open Source ERP and CRM | Odoo");
+        await waitFor(".o_we_description_link_preview");
+        expect(".o_we_description_link_preview").toHaveText(description);
+        expect(".o_we_url_link").toHaveText(title);
 
         const pNode = queryOne("p");
         setSelection({
@@ -1051,14 +1077,33 @@ describe("upload file via link popover", () => {
 
     describe("hidden label field", () => {
         test("label field should be hidden if <a> content is not text only", async () => {
-            await setupEditor(`<a href="http://test.com/"><img src="${base64Img}">te[]xt</a>`);
+            await setupEditor(
+                `<p><a href="http://test.com/"><img src="${base64Img}">te[]xt</a></p>`
+            );
             await waitFor(".o-we-linkpopover");
             expect(".o-we-linkpopover").toHaveCount(1);
             // open edit mode and check if label input is hidden
             await click(".o_we_edit_link");
-            await waitFor(".input-group");
+            await waitFor(".o_we_href_input_link", { timeout: 1500 });
             expect(".o_we_label_link").not.toBeVisible();
             expect(".o_we_href_input_link").toHaveValue("http://test.com/");
         });
     });
+});
+
+test("Should properly show the preview if fetching metadata fails", async () => {
+    const id = Math.random().toString();
+    onRpc("/html_editor/link_preview_internal", () => Promise.reject(new Error(`No data ${id}`)));
+    onRpc("/contactus", () => ({}));
+    const originalConsoleWarn = console.warn.bind(console);
+    patchWithCleanup(console, {
+        warn: (msg, error, ...args) => {
+            if (!error?.message?.includes?.(id)) {
+                originalConsoleWarn(msg, error, ...args);
+            }
+        },
+    });
+    const { el } = await setupEditor('<p><a href="/contactus">a[]b</a></p>');
+    await waitFor(".o-we-linkpopover");
+    expect(cleanLinkArtifacts(getContent(el))).toBe('<p><a href="/contactus">a[]b</a></p>');
 });

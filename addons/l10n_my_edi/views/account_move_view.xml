@@ -21,11 +21,11 @@
             </xpath>
             <!-- There are quite a few fields, and with other modules adding some too it would be too messy to not put them in a tab. -->
             <xpath expr="//notebook" position="inside">
-                <page string="MyInvois" invisible="country_code != 'MY'">
+                <page string="MyInvois" invisible="country_code != 'MY' or move_type not in ('out_invoice', 'out_refund', 'in_invoice', 'in_refund', 'out_receipt', 'in_receipt')">
                     <group>
                         <group>
                             <!-- Only displayed if the invoice contains a tax of type Exempt -->
-                            <field name="l10n_my_edi_display_tax_exemption_reason" invisible="1"/> <!-- TODO: to be removed in master -->
+                            <field name="l10n_my_edi_display_tax_exemption_reason" invisible="1"/>
                             <field name="l10n_my_edi_exemption_reason" invisible="not l10n_my_edi_display_tax_exemption_reason" readonly="l10n_my_edi_state != False"/>
                             <field name="l10n_my_edi_custom_form_reference" readonly="l10n_my_edi_state != False"/>
                         </group>

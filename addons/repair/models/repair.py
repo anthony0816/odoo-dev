@@ -285,7 +285,15 @@ class Repair(models.Model):
         # Force to prefetch more than 1000 by 1000
         all_moves._fields['forecast_availability'].compute_value(all_moves)
         for repair in repairs:
-            if any(float_compare(move.forecast_availability, move.product_qty, precision_rounding=move.product_id.uom_id.rounding) < 0 for move in repair.move_ids):
+            if any(
+                move.product_id
+                and float_compare(
+                    move.forecast_availability,
+                    move.product_qty,
+                    precision_rounding=move.product_id.uom_id.rounding
+                ) < 0
+                for move in repair.move_ids
+            ):
                 repair.parts_availability = _('Not Available')
                 repair.parts_availability_state = 'late'
                 continue
@@ -316,7 +324,7 @@ class Repair(models.Model):
     @api.depends('move_ids.quantity', 'move_ids.product_uom_qty', 'move_ids.product_uom.rounding')
     def _compute_has_uncomplete_moves(self):
         for repair in self:
-            repair.has_uncomplete_moves = any(float_compare(move.quantity, move.product_uom_qty, precision_rounding=move.product_uom.rounding) < 0 for move in repair.move_ids)
+            repair.has_uncomplete_moves = any(move.product_uom and float_compare(move.quantity, move.product_uom_qty, precision_rounding=move.product_uom.rounding) < 0 for move in repair.move_ids)
 
     @api.depends('move_ids', 'state', 'move_ids.product_uom_qty')
     def _compute_unreserve_visible(self):
@@ -545,10 +553,6 @@ class Repair(models.Model):
                 repair.move_id = move_id
         all_moves = self.move_ids + product_moves
         all_moves._action_done(cancel_backorder=True)
-
-        for sale_line in self.move_ids.sale_line_id:
-            price_unit = sale_line.price_unit
-            sale_line.write({'product_uom_qty': sale_line.qty_delivered, 'price_unit': price_unit})
 
         self.state = 'done'
         return True

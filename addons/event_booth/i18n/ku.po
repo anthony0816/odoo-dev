@@ -1,22 +1,22 @@
 # Translation of Odoo Server.
 # This file contains the translation of the following modules:
 # 	* event_booth
-# 
+#
 # Translators:
 # Raz Omer Hussein, 2025
-# 
+#
 msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 17.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2023-10-26 21:55+0000\n"
+"POT-Creation-Date: 2025-12-29 18:37+0000\n"
 "PO-Revision-Date: 2024-09-25 09:41+0000\n"
 "Last-Translator: Raz Omer Hussein, 2025\n"
 "Language-Team: Kurdish (https://app.transifex.com/odoo/teams/41243/ku/)\n"
+"Language: ku\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: \n"
-"Language: ku\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
 #. module: event_booth
@@ -372,7 +372,7 @@ msgstr ""
 #: model_terms:ir.ui.view,arch_db:event_booth.event_booth_view_search
 #: model_terms:ir.ui.view,arch_db:event_booth.event_type_booth_view_search
 msgid "Group By"
-msgstr ""
+msgstr "گروپ لەلایەن..."
 
 #. module: event_booth
 #: model:ir.model.fields,field_description:event_booth.field_event_booth__has_message
@@ -484,12 +484,12 @@ msgstr "ناو"
 #. module: event_booth
 #: model:ir.model.fields,field_description:event_booth.field_event_booth__activity_calendar_event_id
 msgid "Next Activity Calendar Event"
-msgstr ""
+msgstr "چالاکییەکانی داهاتووی ڕووداوی ساڵنامە"
 
 #. module: event_booth
 #: model:ir.model.fields,field_description:event_booth.field_event_booth__activity_date_deadline
 msgid "Next Activity Deadline"
-msgstr ""
+msgstr "دوا وادەی چالاکییەکانی داهاتوو"
 
 #. module: event_booth
 #: model:ir.model.fields,field_description:event_booth.field_event_booth__activity_summary
@@ -607,7 +607,7 @@ msgstr "بەکارهێنەری بەرپرسیار"
 #. module: event_booth
 #: model:ir.model.fields,field_description:event_booth.field_event_booth__message_has_sms_error
 msgid "SMS Delivery error"
-msgstr ""
+msgstr "هەڵەی گەیاندنی کورتەنامە"
 
 #. module: event_booth
 #: model:ir.model.fields,field_description:event_booth.field_event_booth_category__sequence
@@ -659,7 +659,7 @@ msgstr ""
 #. module: event_booth
 #: model:ir.model.fields,help:event_booth.field_event_booth__activity_exception_decoration
 msgid "Type of the exception activity on record."
-msgstr ""
+msgstr "جۆری چالاکیی ئیستسنای تۆمارکراو."
 
 #. module: event_booth
 #: model:ir.model.fields.selection,name:event_booth.selection__event_booth__state__unavailable

@@ -206,7 +206,7 @@ class HolidaysType(models.Model):
                 allowed_excess = leave_type.max_allowed_negative if leave_type.allows_negative else 0
                 allocations = allocations.filtered(lambda alloc:
                     alloc.allocation_type == 'accrual'
-                    or (alloc.max_leaves > 0 and alloc.virtual_remaining_leaves > -allowed_excess)
+                    or (alloc.max_leaves > 0 and (alloc.max_leaves - alloc.leaves_taken) > -allowed_excess)
                 )
                 leave_type.has_valid_allocation = bool(allocations)
             else:
@@ -396,6 +396,7 @@ class HolidaysType(models.Model):
             ('holiday_status_id', 'in', self.ids),
         ]
         action['context'] = {
+            'employee_id': False,
             'default_holiday_status_id': self.ids[0],
             'search_default_approved_state': 1,
             'search_default_year': 1,
@@ -454,7 +455,9 @@ class HolidaysType(models.Model):
         leave_types = self.search(domain, order='id')
         employee = self.env['hr.employee']._get_contextual_employee()
         if employee:
-            return leave_types.get_allocation_data(employee, target_date)[employee]
+            allocation_data = leave_types.get_allocation_data(employee, target_date)[employee]
+            result = [data for data in allocation_data if data[1].get('max_leaves', False)]
+            return result
         return []
 
     def get_allocation_data(self, employees, target_date=None):
@@ -473,8 +476,6 @@ class HolidaysType(models.Model):
 
         for employee in employees:
             for leave_type in leave_type_requires_allocation:
-                if len(allocations_leaves_consumed[employee][leave_type]) == 0:
-                    continue
                 lt_info = (
                     leave_type.name,
                     {
@@ -581,8 +582,7 @@ class HolidaysType(models.Model):
                     'closest_allocation_duration': closest_allocation_duration,
                     'holds_changes': holds_changes,
                 })
-                if not self.env.context.get('from_dashboard', False) or lt_info[1]['max_leaves']:
-                    allocation_data[employee].append(lt_info)
+                allocation_data[employee].append(lt_info)
         for employee in allocation_data:
             for leave_type_data in allocation_data[employee]:
                 for key, value in leave_type_data[1].items():

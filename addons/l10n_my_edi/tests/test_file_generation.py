@@ -5,7 +5,7 @@ from freezegun import freeze_time
 from lxml import etree
 
 from odoo.addons.account.tests.common import AccountTestInvoicingCommon
-from odoo.tools import file_open
+from odoo.tools import file_open, cleanup_xml_node
 from odoo.tests import tagged
 
 NS_MAP = {
@@ -495,6 +495,84 @@ class L10nMyEDITestFileGeneration(AccountTestInvoicingCommon):
         with file_open('l10n_my_edi/tests/expected_xmls/invoice_import.xml', 'rb') as f:
             expected_xml = etree.fromstring(f.read())
         self.assertXmlTreeEqual(root, expected_xml)
+
+    def test_10_prepaid_amount_present(self):
+        """
+        Ensure the prepaid amount is present in the UBL XML under <cac:PrepaidPayment>.
+        """
+        invoice = self.init_invoice('out_invoice', currency=self.other_currency, products=self.product_a)
+        invoice.action_post()
+        vals = self.env['account.edi.xml.ubl_myinvois_my'].with_context(
+            convert_fixed_taxes=True)._export_invoice_vals(invoice.with_context(lang=invoice.partner_id.lang)
+        )
+        vals['vals']['prepaid_payment_vals'].update({
+            'amount': 2200.00,
+            'currency': self.other_currency,
+            'currency_dp': self.other_currency.decimal_places,
+        })
+        xml_content = self.env['ir.qweb']._render(vals['main_template'], vals)
+        file = etree.tostring(cleanup_xml_node(xml_content), xml_declaration=True, encoding='UTF-8')
+        root = etree.fromstring(file)
+        prepaid_node = root.xpath('cac:PrepaidPayment/cbc:PaidAmount', namespaces=NS_MAP)
+        self.assertEqual(prepaid_node[0].text, '2200.00')
+
+    def test_11_original_document_id(self):
+        """
+        Ensure the original document id is present in the reversed document.
+        """
+        bill = self.init_invoice('in_invoice', products=self.product_a, post=True)
+        bill.ref = 'BILL-123'
+        action = bill.action_reverse()
+        reversal_wizard = self.env[action['res_model']].with_context(
+            active_ids=bill.ids,
+            active_model='account.move',
+            default_journal_id=bill.journal_id.id,
+        ).create({})
+        action = reversal_wizard.reverse_moves()
+        credit_note = self.env['account.move'].browse(action['res_id'])
+        credit_note.action_post()
+
+        file, _errors = credit_note._l10n_my_edi_generate_invoice_xml()
+        root = etree.fromstring(file)
+        self._assert_node_values(
+            root,
+            'cac:BillingReference/cac:InvoiceDocumentReference/cbc:ID',
+            'BILL-123',
+        )
+
+    def test_12_original_document_id_from_xml(self):
+        """
+        Ensure the original document id is present in the reversed document even if bill reference has changed after
+        sending.
+        """
+        bill = self.init_invoice('in_invoice', products=self.product_a, post=True)
+
+        # Set reference before generating e-invoice
+        bill.ref = 'Initial Reference'
+
+        # Generate e-invoice and mock values
+        bill_file, _errors = bill._l10n_my_edi_generate_invoice_xml()
+        bill.l10n_my_edi_file_id = self.env['ir.attachment'].create({'name': 'test myinvois', 'raw': bill_file})
+        bill.ref = 'Some other reference'
+
+        # Generate credit note
+        action = bill.action_reverse()
+        reversal_wizard = self.env[action['res_model']].with_context(
+            active_ids=bill.ids,
+            active_model='account.move',
+            default_journal_id=bill.journal_id.id,
+        ).create({})
+        action = reversal_wizard.reverse_moves()
+        credit_note = self.env['account.move'].browse(action['res_id'])
+        credit_note.action_post()
+
+        credit_note_file, _errors = credit_note._l10n_my_edi_generate_invoice_xml()
+        root = etree.fromstring(credit_note_file)
+        self._assert_node_values(
+            root,
+            'cac:BillingReference/cac:InvoiceDocumentReference/cbc:ID',
+            'Initial Reference',
+        )
 
     def _assert_node_values(self, root, node_path, text, attributes=None):
         node = root.xpath(node_path, namespaces=NS_MAP)

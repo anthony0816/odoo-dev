@@ -1,31 +1,35 @@
 # Translation of Odoo Server.
 # This file contains the translation of the following modules:
-# 	* account_edi_ubl_cii
-# 
+# * account_edi_ubl_cii
+#
 # Translators:
 # Wil Odoo, 2025
 # Maitê Dietze, 2025
-# 
+#
+# Weblate <noreply-mt-weblate@weblate.org>, 2025.
 msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 18.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-06-06 18:38+0000\n"
-"PO-Revision-Date: 2024-09-25 09:41+0000\n"
-"Last-Translator: Maitê Dietze, 2025\n"
-"Language-Team: Portuguese (Brazil) (https://app.transifex.com/odoo/teams/41243/pt_BR/)\n"
+"POT-Creation-Date: 2026-01-22 18:36+0000\n"
+"PO-Revision-Date: 2025-12-31 08:41+0000\n"
+"Last-Translator: Weblate <noreply-mt-weblate@weblate.org>\n"
+"Language-Team: Portuguese (Brazil) <https://translate.odoo.com/projects/"
+"odoo-18/account_edi_ubl_cii/pt_BR/>\n"
+"Language: pt_BR\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: \n"
-"Language: pt_BR\n"
-"Plural-Forms: nplurals=3; plural=(n == 0 || n == 1) ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;\n"
+"Plural-Forms: nplurals=3; plural=(n == 0 || n == 1) ? 0 : ((n != 0 && n % "
+"1000000 == 0) ? 1 : 2);\n"
+"X-Generator: Weblate 5.14.3\n"
 
 #. module: account_edi_ubl_cii
 #. odoo-python
 #: code:addons/account_edi_ubl_cii/models/account_edi_xml_ubl_bis3.py:0
 msgid ""
-"%s should have a KVK or OIN number set in Company ID field or as Peppol "
-"e-address (EAS code 0106 or 0190)."
+"%s should have a KVK or OIN number set in Company ID field or as Peppol e-"
+"address (EAS code 0106 or 0190)."
 msgstr ""
 "%s deve ter um número KVK ou OIN definido no campo ID da empresa ou como "
 "endereço eletrônico da Peppol (código EAS 0106 ou 0190)."
@@ -36,15 +40,16 @@ msgid "1.0"
 msgstr "1.0"
 
 #. module: account_edi_ubl_cii
-#: model_terms:ir.ui.view,arch_db:account_edi_ubl_cii.account_invoice_facturx_export_22
-msgid "42"
-msgstr "42"
-
-#. module: account_edi_ubl_cii
 #. odoo-python
 #: code:addons/account_edi_ubl_cii/models/account_edi_common.py:0
 msgid "A payment of %s was detected."
 msgstr "Um pagamento no valor de %s foi detectado."
+
+#. module: account_edi_ubl_cii
+#. odoo-python
+#: code:addons/account_edi_ubl_cii/models/account_edi_common.py:0
+msgid "A rounding amount of %s was detected."
+msgstr "Foi detectado um valor de arredondamento de %s."
 
 #. module: account_edi_ubl_cii
 #: model:ir.model,name:account_edi_ubl_cii.model_account_edi_xml_ubl_a_nz
@@ -60,6 +65,11 @@ msgstr "Troca de AS2"
 #: model:ir.model,name:account_edi_ubl_cii.model_account_move_send
 msgid "Account Move Send"
 msgstr "Envio de movimentação de conta"
+
+#. module: account_edi_ubl_cii
+#: model:ir.model,name:account_edi_ubl_cii.model_account_move_send_wizard
+msgid "Account Move Send Wizard"
+msgstr "Assistente de envio de movimentação de conta"
 
 #. module: account_edi_ubl_cii
 #: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__9923
@@ -81,17 +91,22 @@ msgstr "Artigos 226, itens 11 a 15, da Diretiva 2006/112/EN"
 #. odoo-python
 #: code:addons/account_edi_ubl_cii/models/account_edi_common.py:0
 msgid ""
-"At least one of the following fields %(field_list)s is required on "
-"%(record)s."
+"At least one of the following fields %(field_list)s is required on %"
+"(record)s."
 msgstr ""
-"Pelo menos um dos seguintes campos %(field_list)s é obrigatório em "
-"%(record)s."
+"Pelo menos um dos seguintes campos %(field_list)s é obrigatório em %"
+"(record)s."
 
 #. module: account_edi_ubl_cii
 #: model:ir.model.fields,field_description:account_edi_ubl_cii.field_account_bank_statement_line__ubl_cii_xml_id
 #: model:ir.model.fields,field_description:account_edi_ubl_cii.field_account_move__ubl_cii_xml_id
 msgid "Attachment"
 msgstr "Anexo"
+
+#. module: account_edi_ubl_cii
+#: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__invoice_edi_format__ubl_a_nz
+msgid "Australia (BIS Billing 3.0 A-NZ)"
+msgstr "Australia (BIS Billing 3.0 A-NZ)"
 
 #. module: account_edi_ubl_cii
 #: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__0151
@@ -109,24 +124,20 @@ msgid "Austria VOKZ"
 msgstr "Áustria VOKZ"
 
 #. module: account_edi_ubl_cii
-#: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__invoice_edi_format__ubl_bis3
-msgid "BIS Billing 3.0"
-msgstr "BIS Billing 3.0"
-
-#. module: account_edi_ubl_cii
-#: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__invoice_edi_format__ubl_a_nz
-msgid "BIS Billing 3.0 A-NZ"
-msgstr "BIS Billing 3.0 A-NZ"
-
-#. module: account_edi_ubl_cii
-#: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__invoice_edi_format__ubl_sg
-msgid "BIS Billing 3.0 SG"
-msgstr "BIS Billing 3.0 SG"
+#: model:ir.model.fields,field_description:account_edi_ubl_cii.field_res_partner__available_peppol_eas
+#: model:ir.model.fields,field_description:account_edi_ubl_cii.field_res_users__available_peppol_eas
+msgid "Available Peppol Eas"
+msgstr "Formatos disponíveis do Peppol Edi"
 
 #. module: account_edi_ubl_cii
 #: model:ir.model,name:account_edi_ubl_cii.model_account_edi_xml_ubl_de
 msgid "BIS3 DE (XRechnung)"
 msgstr "BIS3 DE (XRechnung)"
+
+#. module: account_edi_ubl_cii
+#: model:ir.model,name:account_edi_ubl_cii.model_account_edi_ubl
+msgid "Base helpers for UBL"
+msgstr "Ajudantes básicos para UBL"
 
 #. module: account_edi_ubl_cii
 #: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__0208
@@ -164,10 +175,13 @@ msgstr "Verificar parceiro(s)"
 #: model:ir.model.fields,help:account_edi_ubl_cii.field_res_users__peppol_eas
 msgid ""
 "Code used to identify the Endpoint for BIS Billing 3.0 and its derivatives.\n"
-"             List available at https://docs.peppol.eu/poacc/billing/3.0/codelist/eas/"
+"             List available at https://docs.peppol.eu/poacc/billing/3.0/"
+"codelist/eas/"
 msgstr ""
-"Código usado para identificar o endpoint do BIS Billing 3.0 e seus derivados.\n"
-"             Lista disponível em https://docs.peppol.eu/poacc/billing/3.0/codelist/eas/"
+"Código usado para identificar o endpoint do BIS Billing 3.0 e seus "
+"derivados.\n"
+"             Lista disponível em https://docs.peppol.eu/poacc/billing/3.0/"
+"codelist/eas/"
 
 #. module: account_edi_ubl_cii
 #: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__0210
@@ -188,6 +202,7 @@ msgstr ""
 
 #. module: account_edi_ubl_cii
 #. odoo-python
+#: code:addons/account_edi_ubl_cii/models/account_edi_ubl.py:0
 #: code:addons/account_edi_ubl_cii/models/account_edi_xml_ubl_20.py:0
 msgid "Conditional cash/payment discount"
 msgstr "Desconto condicional de pagamento à vista"
@@ -217,8 +232,8 @@ msgstr ""
 #. odoo-python
 #: code:addons/account_edi_ubl_cii/models/account_edi_common.py:0
 msgid ""
-"Could not retrieve currency: %s. Did you enable the multicurrency option and"
-" activate the currency?"
+"Could not retrieve currency: %s. Did you enable the multicurrency option and "
+"activate the currency?"
 msgstr ""
 "Não foi possível recuperar a moeda: %s. Você habilitou a opção de "
 "multimoedas e ativou a moeda?"
@@ -235,14 +250,13 @@ msgstr ""
 #: code:addons/account_edi_ubl_cii/models/account_edi_common.py:0
 msgid "Could not retrieve the tax: %(tax_percentage)s %% for line '%(line)s'."
 msgstr ""
-"Não foi possível recuperar o imposto: %(tax_percentage)s %% na linha "
-"'%(line)s'."
+"Não foi possível recuperar o imposto: %(tax_percentage)s %% na linha '%"
+"(line)s'."
 
 #. module: account_edi_ubl_cii
 #. odoo-python
 #: code:addons/account_edi_ubl_cii/models/account_edi_common.py:0
-msgid ""
-"Could not retrieve the tax: %s for the document level allowance/charge."
+msgid "Could not retrieve the tax: %s for the document level allowance/charge."
 msgstr ""
 "Não foi possível recuperar o imposto: %s do subsídio/taxa no nível do "
 "documento."
@@ -288,6 +302,12 @@ msgid "Directorates of the European Commission"
 msgstr "Diretorias da Comissão Europeia"
 
 #. module: account_edi_ubl_cii
+#. odoo-python
+#: code:addons/account_edi_ubl_cii/models/account_edi_ubl.py:0
+msgid "Discount"
+msgstr "Desconto"
+
+#. module: account_edi_ubl_cii
 #: model:ir.model,name:account_edi_ubl_cii.model_account_edi_xml_ubl_efff
 msgid "E-FFF (BE)"
 msgstr "E-FFF (BE)"
@@ -301,6 +321,11 @@ msgstr "Código de localização EAN"
 #: model_terms:ir.ui.view,arch_db:account_edi_ubl_cii.account_invoice_pdfa_3_facturx_metadata
 msgid "EN 16931"
 msgstr "EN 16931"
+
+#. module: account_edi_ubl_cii
+#: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__invoice_edi_format__ubl_bis3
+msgid "EU Standard (Peppol Bis 3.0)"
+msgstr "EU Standard (Peppol Bis 3.0)"
 
 #. module: account_edi_ubl_cii
 #. odoo-python
@@ -344,13 +369,14 @@ msgstr "VAT Estônia"
 #. module: account_edi_ubl_cii
 #. odoo-python
 #: code:addons/account_edi_ubl_cii/models/account_edi_common.py:0
-msgid "Export outside the EU"
-msgstr "Exportar fora da UE"
+msgid "Exempt from tax"
+msgstr "Isento de impostos"
 
 #. module: account_edi_ubl_cii
-#: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__invoice_edi_format__facturx
-msgid "Factur-X (CII)"
-msgstr "Factur-X (CII)"
+#. odoo-python
+#: code:addons/account_edi_ubl_cii/models/account_edi_common.py:0
+msgid "Export outside the EU"
+msgstr "Exportar fora da UE"
 
 #. module: account_edi_ubl_cii
 #: model:ir.model,name:account_edi_ubl_cii.model_account_edi_xml_cii
@@ -401,6 +427,21 @@ msgid "Format used to import the invoice: %s"
 msgstr "Formato usado para importar a fatura: %s"
 
 #. module: account_edi_ubl_cii
+#: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__invoice_edi_format__facturx
+msgid "France (FacturX)"
+msgstr "France (FacturX)"
+
+#. module: account_edi_ubl_cii
+#: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__0225
+msgid "France FRCTC Electronic Address"
+msgstr "France FRCTC Electronic Address"
+
+#. module: account_edi_ubl_cii
+#: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__0240
+msgid "France Register of legal persons"
+msgstr "France Register of legal persons"
+
+#. module: account_edi_ubl_cii
 #: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__0002
 msgid "France SIRENE"
 msgstr "SIRENE França"
@@ -419,6 +460,11 @@ msgstr "VAT França"
 #: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__0209
 msgid "GS1 identification keys"
 msgstr "Chaves de identificação GS1"
+
+#. module: account_edi_ubl_cii
+#: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__invoice_edi_format__xrechnung
+msgid "Germany (XRechnung)"
+msgstr "Germany (XRechnung)"
 
 #. module: account_edi_ubl_cii
 #: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__0204
@@ -449,6 +495,12 @@ msgstr "Kennitala Islândia"
 #: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__0202
 msgid "Indirizzo di Posta Elettronica Certificata"
 msgstr "Indirizzo di Posta Elettronica Certificata"
+
+#. module: account_edi_ubl_cii
+#. odoo-python
+#: code:addons/account_edi_ubl_cii/models/account_move_send.py:0
+msgid "Install Chorus Pro"
+msgstr "Instalar o Chorus Pro"
 
 #. module: account_edi_ubl_cii
 #. odoo-python
@@ -509,6 +561,11 @@ msgid "Kennziffer des Unternehmensregisters"
 msgstr "Kennziffer des Unternehmensregisters"
 
 #. module: account_edi_ubl_cii
+#: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__0218
+msgid "Latvia Unified registration number"
+msgstr "Latvia Unified registration number"
+
+#. module: account_edi_ubl_cii
 #: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__9939
 msgid "Latvia VAT"
 msgstr "VAT Letônia"
@@ -565,8 +622,8 @@ msgstr "VAT Montenegro"
 
 #. module: account_edi_ubl_cii
 #: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__invoice_edi_format__nlcius
-msgid "NLCIUS"
-msgstr "NLCIUS"
+msgid "Netherlands (NLCIUS)"
+msgstr "Países Baixos (NLCIUS)"
 
 #. module: account_edi_ubl_cii
 #: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__0106
@@ -646,6 +703,15 @@ msgstr ""
 "completo."
 
 #. module: account_edi_ubl_cii
+#. odoo-python
+#: code:addons/account_edi_ubl_cii/models/account_move_send.py:0
+msgid ""
+"Please install the french Chorus pro module to have all the specific rules."
+msgstr ""
+"Instale o módulo Chorus Pro francês para ter acesso a todas as regras "
+"específicas."
+
+#. module: account_edi_ubl_cii
 #: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__9945
 msgid "Poland VAT"
 msgstr "VAT Polônia"
@@ -664,6 +730,12 @@ msgstr "Reportar Ação"
 #: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__9947
 msgid "Romania VAT"
 msgstr "VAT România"
+
+#. module: account_edi_ubl_cii
+#. odoo-python
+#: code:addons/account_edi_ubl_cii/models/account_edi_common.py:0
+msgid "Rounding"
+msgstr "Arredondamento"
 
 #. module: account_edi_ubl_cii
 #: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__9918
@@ -699,6 +771,11 @@ msgstr "VAT San Marino"
 #: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__9948
 msgid "Serbia VAT"
 msgstr "VAT Sérvia"
+
+#. module: account_edi_ubl_cii
+#: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__invoice_edi_format__ubl_sg
+msgid "Singapore (BIS Billing 3.0 SG)"
+msgstr "Cingapura (BIS Billing 3.0 SG)"
 
 #. module: account_edi_ubl_cii
 #: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__0195
@@ -745,6 +822,14 @@ msgstr "VAT Suíça"
 #: code:addons/account_edi_ubl_cii/models/account_edi_common.py:0
 msgid "Tax '%(tax_name)s' is invalid: %(error_message)s"
 msgstr "O imposto '%(tax_name)s' é inválido: %(error_message)s"
+
+#. module: account_edi_ubl_cii
+#. odoo-python
+#: code:addons/account_edi_ubl_cii/models/account_edi_common.py:0
+msgid ""
+"Tax with matching exigibility could not be retrieved: '%(exigibility)s' for "
+"line '%(line)s'."
+msgstr ""
 
 #. module: account_edi_ubl_cii
 #. odoo-python
@@ -814,8 +899,7 @@ msgstr "O campo %(field)s é obrigatório em %(record)s."
 #. module: account_edi_ubl_cii
 #. odoo-python
 #: code:addons/account_edi_ubl_cii/models/account_edi_xml_cii_facturx.py:0
-msgid ""
-"The field 'Sanitized Account Number' is required on the Recipient Bank."
+msgid "The field 'Sanitized Account Number' is required on the Recipient Bank."
 msgstr ""
 "O campo 'Número da conta uniformizado' é obrigatório no banco destinatário."
 
@@ -831,9 +915,20 @@ msgstr ""
 "revertidas."
 
 #. module: account_edi_ubl_cii
+#. odoo-python
+#: code:addons/account_edi_ubl_cii/models/account_edi_xml_ubl_bis3.py:0
+msgid "The prepaid amount of %s corresponds to the withholding tax applied."
+msgstr ""
+
+#. module: account_edi_ubl_cii
 #: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__9952
 msgid "Turkey VAT"
 msgstr "VAT Turquia"
+
+#. module: account_edi_ubl_cii
+#: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__0235
+msgid "UAE Tax Identification Number (TIN)"
+msgstr "Número de identificação nacional"
 
 #. module: account_edi_ubl_cii
 #: model:ir.model,name:account_edi_ubl_cii.model_account_edi_xml_ubl_20
@@ -882,6 +977,12 @@ msgid "United Kingdom VAT"
 msgstr "VAT Reino Unido"
 
 #. module: account_edi_ubl_cii
+#. odoo-python
+#: code:addons/account_edi_ubl_cii/wizard/account_move_send_wizard.py:0
+msgid "Unspported file type via %s"
+msgstr "Tipo de arquivo não suportado via %s"
+
+#. module: account_edi_ubl_cii
 #: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__peppol_eas__9953
 msgid "Vatican VAT"
 msgstr "VAT Vaticano"
@@ -914,26 +1015,16 @@ msgid "XML UBL"
 msgstr "UBL do XML"
 
 #. module: account_edi_ubl_cii
-#: model:ir.model.fields.selection,name:account_edi_ubl_cii.selection__res_partner__invoice_edi_format__xrechnung
-msgid "XRechnung CIUS"
-msgstr "XRechnung CIUS"
-
-#. module: account_edi_ubl_cii
 #. odoo-python
 #: code:addons/account_edi_ubl_cii/models/account_edi_xml_cii_facturx.py:0
 msgid ""
 "You should include at least one tax per invoice line. [BR-CO-04]-Each "
-"Invoice line (BG-25) shall be categorized with an Invoiced item VAT category"
-" code (BT-151)."
+"Invoice line (BG-25) shall be categorized with an Invoiced item VAT category "
+"code (BT-151)."
 msgstr ""
-"Você deve incluir pelo menos um imposto por linha de fatura. [BR-CO-04]-Cada"
-" linha da fatura (BG-25) deve ser categorizada com um código de categoria de"
-" imposto do item faturado (BT-151)."
-
-#. module: account_edi_ubl_cii
-#: model_terms:ir.ui.view,arch_db:account_edi_ubl_cii.view_partner_property_form
-msgid "Your endpoint"
-msgstr "Seu endpoint"
+"Você deve incluir pelo menos um imposto por linha de fatura. [BR-CO-04]-Cada "
+"linha da fatura (BG-25) deve ser categorizada com um código de categoria de "
+"imposto do item faturado (BT-151)."
 
 #. module: account_edi_ubl_cii
 #: model:ir.model.fields,field_description:account_edi_ubl_cii.field_res_partner__invoice_edi_format
@@ -955,3 +1046,24 @@ msgstr "fx"
 #: model_terms:ir.ui.view,arch_db:account_edi_ubl_cii.account_invoice_pdfa_3_facturx_metadata
 msgid "urn:factur-x:pdfa:CrossIndustryDocument:invoice:1p0#"
 msgstr "urn:factur-x:pdfa:CrossIndustryDocument:invoice:1p0#"
+
+#~ msgid "Your endpoint"
+#~ msgstr "Seu endpoint"
+
+#~ msgid "BIS Billing 3.0"
+#~ msgstr "BIS Billing 3.0"
+
+#~ msgid "BIS Billing 3.0 A-NZ"
+#~ msgstr "BIS Billing 3.0 A-NZ"
+
+#~ msgid "BIS Billing 3.0 SG"
+#~ msgstr "BIS Billing 3.0 SG"
+
+#~ msgid "Factur-X (CII)"
+#~ msgstr "Factur-X (CII)"
+
+#~ msgid "NLCIUS"
+#~ msgstr "NLCIUS"
+
+#~ msgid "XRechnung CIUS"
+#~ msgstr "XRechnung CIUS"

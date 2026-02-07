@@ -28,6 +28,7 @@ import {
 import { assets } from "@web/core/assets";
 import { browser } from "@web/core/browser/browser";
 import { patch } from "@web/core/utils/patch";
+import { delay } from "@web/core/utils/concurrency";
 import { FormController } from "@web/views/form/form_controller";
 import { Counter, EmbeddedWrapperMixin } from "./_helpers/embedded_component";
 import { moveSelectionOutsideEditor, setSelection } from "./_helpers/selection";
@@ -855,12 +856,10 @@ test("Embed video by pasting video URL", async () => {
         },
     ];
 
-    onRpc("/html_editor/video_url/data", async () => {
-        return {
-            platform: "youtube",
-            embed_url: "//www.youtube.com/embed/qxb74CMR748?rel=0&autoplay=0",
-        };
-    });
+    onRpc("/html_editor/video_url/data", async () => ({
+        platform: "youtube",
+        embed_url: "//www.youtube.com/embed/qxb74CMR748?rel=0&autoplay=0",
+    }));
 
     await mountView({
         type: "form",
@@ -1319,12 +1318,8 @@ test("edit and save a html field in collaborative should keep the same wysiwyg",
             ' data-last-history-steps="12345"'
         );
     });
-    onRpc("/html_editor/get_ice_servers", () => {
-        return [];
-    });
-    onRpc("/html_editor/bus_broadcast", (params) => {
-        return { id: 10 };
-    });
+    onRpc("/html_editor/get_ice_servers", () => []);
+    onRpc("/html_editor/bus_broadcast", (params) => ({ id: 10 }));
 
     await mountView({
         type: "form",
@@ -1875,8 +1870,8 @@ describe("save image", () => {
 
         const imageRecord = IrAttachment._records[0];
         // Method to get the html of a cropped image.
-        const getImageContainerHTML = (src, isModified) => {
-            return `
+        const getImageContainerHTML = (src, isModified) =>
+            `
             <p>
                 <img
                     class="img img-fluid o_we_custom_image o_we_image_cropped${
@@ -1897,7 +1892,6 @@ describe("save image", () => {
         `
                 .replace(/(?:\s|(?:\r\n))+/g, " ")
                 .replace(/\s?(<|>)\s?/g, "$1");
-        };
         // Promise to resolve when we want the response of the modify_image RPC.
         const modifyImagePromise = new Deferred();
         let writeCount = 0;
@@ -1911,7 +1905,6 @@ describe("save image", () => {
         // "registered".
         const newImageSrc = "/web/image/1234/cropped_transparent.png";
         onRpc("web_save", () => {
-            expect(true).toBe(false);
             throw new Error("web_save should only be called through sendBeacon");
         });
         onRpc(`/html_editor/modify_image/${imageRecord.id}`, async (request) => {
@@ -1924,7 +1917,6 @@ describe("save image", () => {
                 return newImageSrc;
             } else {
                 // Fail the test if too many modify_image are called.
-                expect(true).toBe(false);
                 throw new Error("The image should only have been modified once during this test");
             }
         });
@@ -2204,6 +2196,68 @@ describe("save image", () => {
         expect(img.getAttribute("src")).toBe("/test_image_url.png?access_token=12345");
         expect(img).not.toHaveClass("o_b64_image_to_save");
         expect.verifySteps(["add_data: partner 1", "generate_access_token: 123"]);
+    });
+
+    test("Ensure a traceback is not raised when hiding an HtmlField with unsaved images", async () => {
+        Partner._records = [
+            {
+                id: 1,
+                txt: "<p class='test_target'><br></p>",
+            },
+        ];
+
+        onRpc("/html_editor/attachment/add_data", async (request) => {
+            const { params } = await request.json();
+            const { res_id, res_model } = params;
+            expect.step(`add_data-start: ${res_model} ${res_id}`);
+            // add a delay to emulate saving a big image.
+            await delay(50);
+            expect.step(`add_data-end: ${res_model} ${res_id}`);
+            return {
+                image_src: "/test_image_url.png",
+                access_token: "1234",
+                public: false,
+            };
+        });
+
+        await mountView({
+            type: "form",
+            resId: 1,
+            resModel: "partner",
+            arch: `
+            <form>
+                <notebook>
+                    <page string="html" name="html">
+                        <field name="txt" widget="html"/>
+                    </page>
+                    <page string="empty" name="empty"/>
+                </notebook>
+            </form>`,
+        });
+        setSelectionInHtmlField(".test_target");
+
+        // Paste image.
+        pasteFile(
+            htmlEditor,
+            createBase64ImageFile(
+                "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIAQMAAAD+wSzIAAAABlBMVEX///+/v7+jQ3Y5AAAADklEQVQI12P4AIX8EAgALgAD/aNpbtEAAAAASUVORK5CYII"
+            )
+        );
+        await waitFor("img");
+        const b64img = htmlEditor.editable.querySelector("img");
+        expect(b64img.src.startsWith("data:image/png;base64,")).toBe(true);
+        expect(b64img).toHaveClass("o_b64_image_to_save");
+
+        // Switch tab, this should trigger the image save.
+        await contains(".o_notebook_headers .nav-link:not(.active)").click();
+        await delay(50);
+        // reswitch tab, and check the image was saved properly.
+        await contains(".o_notebook_headers .nav-link:not(.active)").click();
+        const savedImg = htmlEditor.editable.querySelector("img");
+        expect(savedImg.getAttribute("src")).toBe("/test_image_url.png?access_token=1234");
+        expect(savedImg).not.toHaveClass("o_b64_image_to_save");
+
+        expect.verifySteps(["add_data-start: partner 1", "add_data-end: partner 1"]);
     });
 });
 

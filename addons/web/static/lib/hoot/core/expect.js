@@ -16,11 +16,11 @@ import {
     isNodeVisible,
     queryRect,
 } from "@web/../lib/hoot-dom/helpers/dom";
-import { Deferred } from "@web/../lib/hoot-dom/helpers/time";
 import {
     addInteractionListener,
     getColorHex,
     isFirefox,
+    isInstanceOf,
     isIterable,
     R_WHITE_SPACE,
 } from "@web/../lib/hoot-dom/hoot_dom_utils";
@@ -45,6 +45,7 @@ import {
     S_NONE,
     strictEqual,
 } from "../hoot_utils";
+import { mockFetch } from "../mock/network";
 import { logger } from "./logger";
 import { Test } from "./test";
 
@@ -100,9 +101,8 @@ import { Test } from "./test";
 
 /**
  * @template T
- * @typedef {T & {
- *  deferred: Deferred<boolean>;
- *  options: VerifierOptions
+ * @typedef {T & ReturnType<Promise.withResolvers> & {
+ *  options: VerifierOptions;
  *  timeout: number;
  * }} AsyncResolver
  */
@@ -135,6 +135,7 @@ const {
     Array: { isArray: $isArray },
     clearTimeout,
     Error,
+    Intl: { ListFormat },
     Math: { abs: $abs, floor: $floor },
     Object: { assign: $assign, create: $create, entries: $entries, keys: $keys },
     parseFloat,
@@ -178,7 +179,7 @@ function detailsFromValues(...args) {
  * @param {...unknown} args
  */
 function detailsFromValuesWithDiff(...args) {
-    return [...detailsFromValues(...args), Markup.diff(...args)];
+    return detailsFromValues(...args).concat(Markup.diff(...args));
 }
 
 /**
@@ -304,7 +305,7 @@ function listJoin(list, separator, lastSeparator) {
 /** @type {typeof makeLabel} */
 function makeLabelOrString(...args) {
     const label = makeLabel(...args);
-    if (logger.allows("debug")) {
+    if (logger.canLog("debug")) {
         debugLabelCache.set(label, args[0]);
     }
     return label[1] === null ? label[0] : label;
@@ -360,7 +361,7 @@ function valueMatches(value, matcher) {
     if (matcher === S_ANY) {
         return !isNil(value);
     }
-    if (matcher instanceof RegExp) {
+    if (isInstanceOf(matcher, RegExp)) {
         return matcher.test(value);
     }
     if (typeof matcher === "number") {
@@ -447,6 +448,7 @@ export function makeExpect(params) {
         if (currentResult.currentSteps.length) {
             currentResult.registerEvent("assertion", {
                 label: "step",
+                docLabel: "expect.step",
                 pass: false,
                 failedDetails: detailsFromEntries([["Steps:", currentResult.currentSteps]]),
                 reportMessage: [r`unverified steps`],
@@ -457,6 +459,7 @@ export function makeExpect(params) {
         if (!(assertionCount + queryCount)) {
             currentResult.registerEvent("assertion", {
                 label: "assertions",
+                docLabel: "expect.assertions",
                 pass: false,
                 reportMessage: [
                     r`expected at least`,
@@ -470,6 +473,7 @@ export function makeExpect(params) {
         ) {
             currentResult.registerEvent("assertion", {
                 label: "assertions",
+                docLabel: "expect.assertions",
                 pass: false,
                 reportMessage: [
                     r`expected`,
@@ -485,6 +489,7 @@ export function makeExpect(params) {
         if (currentResult.currentErrors.length) {
             currentResult.registerEvent("assertion", {
                 label: "errors",
+                docLabel: "expect.errors",
                 pass: false,
                 reportMessage: [currentResult.currentErrors.length, r`unverified error(s)`],
             });
@@ -494,6 +499,7 @@ export function makeExpect(params) {
         if (currentResult.expectedErrors && currentResult.expectedErrors !== errorCount) {
             currentResult.registerEvent("assertion", {
                 label: "errors",
+                docLabel: "expect.errors",
                 pass: false,
                 reportMessage: [
                     r`expected`,
@@ -540,6 +546,7 @@ export function makeExpect(params) {
             /** @type {import("../hoot_utils").Reporting} */
             const report = {
                 assertions: assertionCount,
+                duration: test.lastResults?.duration || 0,
                 tests: 1,
             };
             if (!currentResult.pass) {
@@ -563,6 +570,12 @@ export function makeExpect(params) {
     }
 
     /**
+     * Expects the current test to have the `expected` amount of assertions. This
+     * number cannot be less than 1.
+     *
+     * Note that it is generally preferred to use `expect.step` and `expect.verifySteps`
+     * instead as it is more reliable and allows to test more extensively.
+     *
      * @param {number} expected
      */
     function assertions(expected) {
@@ -606,10 +619,10 @@ export function makeExpect(params) {
             return false;
         }
         const { errors, options } = resolver;
-        const actualErrors = currentResult.currentErrors;
+        const { currentErrors } = currentResult;
         const pass =
-            actualErrors.length === errors.length &&
-            actualErrors.every(
+            currentErrors.length === errors.length &&
+            currentErrors.every(
                 (error, i) =>
                     match(error, errors[i]) || (error.cause && match(error.cause, errors[i]))
             );
@@ -624,12 +637,13 @@ export function makeExpect(params) {
                 : "expected the following errors";
             const assertion = {
                 label: "verifyErrors",
+                docLabel: "expect.verifyErrors",
                 message: options?.message,
                 pass,
                 reportMessage,
             };
             if (!pass) {
-                const fActual = actualErrors.map(formatError);
+                const fActual = currentErrors.map(formatError);
                 const fExpected = errors.map(formatError);
                 assertion.failedDetails = detailsFromValuesWithDiff(fExpected, fActual);
                 assertion.stack = getStack(1);
@@ -663,6 +677,7 @@ export function makeExpect(params) {
                 : "expected the following steps";
             const assertion = {
                 label: "verifySteps",
+                docLabel: "expect.verifySteps",
                 message: options?.message,
                 pass,
                 reportMessage,
@@ -678,6 +693,11 @@ export function makeExpect(params) {
     }
 
     /**
+     * Expects the current test to have the `expected` amount of errors.
+     *
+     * This also means that from the moment this function is called, the test will
+     * accept that amount of errors before being considered as failed.
+     *
      * @param {number} expected
      */
     function errors(expected) {
@@ -719,6 +739,9 @@ export function makeExpect(params) {
     }
 
     /**
+     * Registers a step for the current test, that can be consumed by `expect.verifySteps`.
+     * Unconsumed steps will fail the test.
+     *
      * @param {unknown} value
      */
     function step(value) {
@@ -747,6 +770,11 @@ export function makeExpect(params) {
             throw scopeError("expect.verifyErrors");
         }
         ensureArguments(arguments, "any[]", ["object", null]);
+        if (errors.length > currentResult.expectedErrors) {
+            throw new HootError(
+                `cannot call \`expect.verifyErrors()\` without calling \`expect.errors()\` beforehand`
+            );
+        }
 
         return checkErrors({ errors, options }, true);
     }
@@ -760,6 +788,8 @@ export function makeExpect(params) {
      * @param {VerifierOptions} [options]
      * @returns {boolean}
      * @example
+     *  expect.step("web_read_group");
+     *  expect.step([1, 2]);
      *  expect.verifySteps(["web_read_group", "web_search_read"]);
      */
     function verifySteps(steps, options) {
@@ -801,15 +831,15 @@ export function makeExpect(params) {
         }
 
         currentResult.errorResolver = {
+            ...Promise.withResolvers(),
             errors,
             options,
-            deferred: new Deferred(),
             timeout: setTimeout(
                 () => checkErrors(currentResult.errorResolver, true),
                 options?.timeout ?? 2000
             ),
         };
-        return currentResult.errorResolver.deferred;
+        return currentResult.errorResolver.promise;
     }
 
     /**
@@ -842,15 +872,15 @@ export function makeExpect(params) {
         }
 
         currentResult.stepResolver = {
+            ...Promise.withResolvers(),
             steps,
             options,
-            deferred: new Deferred(),
             timeout: setTimeout(
                 () => checkSteps(currentResult.stepResolver, true),
                 options?.timeout ?? 2000
             ),
         };
-        return currentResult.stepResolver.deferred;
+        return currentResult.stepResolver.promise;
     }
 
     /**
@@ -949,7 +979,7 @@ export class CaseResult {
     consumeErrors() {
         if (this.errorResolver) {
             clearTimeout(this.errorResolver.timeout);
-            this.errorResolver.deferred.resolve(true);
+            this.errorResolver.resolve(true);
             this.errorResolver = null;
         }
         this.currentErrors = [];
@@ -958,7 +988,7 @@ export class CaseResult {
     consumeSteps() {
         if (this.stepResolver) {
             clearTimeout(this.stepResolver.timeout);
-            this.stepResolver.deferred.resolve(true);
+            this.stepResolver.resolve(true);
             this.stepResolver = null;
         }
         this.currentSteps = [];
@@ -987,6 +1017,9 @@ export class CaseResult {
         this.counts[type]++;
         switch (type) {
             case "assertion": {
+                if (value && this.headless) {
+                    delete value.docLabel; // Only required in UI
+                }
                 caseEvent = new Assertion(this.counts.assertion, value);
                 this.pass &&= caseEvent.pass;
                 break;
@@ -1011,7 +1044,7 @@ export class CaseResult {
             }
         }
         if (caseEvent) {
-            if (logger.allows("debug") && CASE_EVENT_LOG_COLORS.includes(type)) {
+            if (logger.canLog("debug") && CASE_EVENT_LOG_COLORS.includes(type)) {
                 const colorName = caseEvent.pass === false ? "rose" : CASE_EVENT_TYPES[type].color;
                 const logArgs = [[caseEvent.label, getColorHex(colorName)]];
                 for (const part of caseEvent.message) {
@@ -1256,7 +1289,7 @@ export class Matcher {
         return this._resolve(() => ({
             name: "toBeInstanceOf",
             acceptedType: "any",
-            predicate: (received) => received instanceof cls,
+            predicate: (received) => isInstanceOf(received, cls),
             message: options?.message,
             onPass: () => [this._received, r`is[! not] an instance of`, cls],
             onFail: () => [r`expected value[! not] to be an instance of the given class`],
@@ -2031,13 +2064,15 @@ export class Matcher {
      * - contain file objects matching the given `files` list.
      *
      * @param {ReturnType<typeof getNodeValue>} [value]
-     * @param {ExpectOptions} [options]
+     * @param {ExpectOptions & { raw?: boolean }} [options]
      * @example
-     *  expect("input[type=email]").toHaveValue("john@doe.com");
+     *  expect("input[name=age]").toHaveValue(29);
      * @example
      *  expect("input[type=file]").toHaveValue(new File(["foo"], "foo.txt"));
      * @example
      *  expect("select[multiple]").toHaveValue(["foo", "bar"]);
+     * @example
+     *  expect("input[name=age]").toHaveValue("29", { raw: true });
      */
     toHaveValue(value, options) {
         this._ensureArguments(arguments, [
@@ -2054,7 +2089,7 @@ export class Matcher {
         return this._resolve(() => ({
             name: "toHaveValue",
             acceptedType: ["string", "node", "node[]"],
-            mapElements: (el) => getNodeValue(el),
+            mapElements: (el) => getNodeValue(el, options?.raw),
             predicate: (elValue, el) => {
                 if (isCheckable(el)) {
                     throw new HootError(
@@ -2146,11 +2181,11 @@ export class Matcher {
                     if (this._flags & FLAGS.rejects) {
                         this._result.registerEvent("assertion", {
                             label: "rejects",
-                            message: [
+                            pass: false,
+                            reportMessage: [
                                 r`expected promise to reject, instead resolved with:`,
                                 result,
                             ],
-                            pass: false,
                         });
                         return false;
                     } else {
@@ -2163,11 +2198,11 @@ export class Matcher {
                     if (this._flags & FLAGS.resolves) {
                         this._result.registerEvent("assertion", {
                             label: "resolves",
-                            message: [
+                            pass: false,
+                            reportMessage: [
                                 r`expected promise to resolve, instead rejected with:`,
                                 reason,
                             ],
-                            pass: false,
                         });
                         return false;
                     } else {
@@ -2200,10 +2235,17 @@ export class Matcher {
 
         const types = ensureArray(acceptedType);
         if (!types.some((type) => isOfType(this._received, type))) {
+            const joinedTypes =
+                types.length > 1
+                    ? new ListFormat("en-GB", {
+                          type: "disjunction",
+                          style: "long",
+                      }).format(types)
+                    : types[0];
             throw new TypeError(
-                `expected received value to be of type ${listJoin(types, ",", "or").join(
-                    " "
-                )}, got ${formatHumanReadable(this._received)}`
+                `expected received value to be of type ${joinedTypes}, got ${formatHumanReadable(
+                    this._received
+                )}`
             );
         }
 
@@ -2258,7 +2300,7 @@ export class Matcher {
      */
     _toHaveHTML(name, property, expected, options) {
         options = { type: "html", ...options };
-        if (!(expected instanceof RegExp)) {
+        if (!isInstanceOf(expected, RegExp)) {
             expected = formatXml(expected, options);
         }
 
@@ -2299,11 +2341,14 @@ export class CaseEvent {
 export class Assertion extends CaseEvent {
     /** @type {string | null | undefined} */
     additionalMessage;
+    /** @type {string | undefined} */
+    docLabel;
     type = CASE_EVENT_TYPES.assertion.value;
 
     /**
      * @param {number} number
      * @param {Partial<Assertion & {
+     *  docLabel?: string;
      *  message: AssertionMessage,
      *  reportMessage: AssertionReportMessage,
      * }>} values
@@ -2311,6 +2356,7 @@ export class Assertion extends CaseEvent {
     constructor(number, values) {
         super();
 
+        this.docLabel = values.docLabel;
         this.label = values.label;
         this.flags = values.flags || 0;
         this.pass = values.pass || false;
@@ -2387,11 +2433,16 @@ export class DOMCaseEvent extends CaseEvent {
      * @param {InteractionType} type
      * @param {InteractionDetails} details
      */
-    constructor(type, [name, args, returnValue]) {
+    constructor(type, [name, alias, args, returnValue]) {
         super();
 
         this.type = CASE_EVENT_TYPES[type].value;
-        this.label = name;
+        this.label = alias || name;
+        if (type === "server") {
+            this.docLabel = mockFetch.name;
+        } else {
+            this.docLabel = name;
+        }
         for (let i = 0; i < args.length; i++) {
             if (args[i] !== undefined && (i === 0 || typeof args[i] !== "object")) {
                 this.message.push(makeLabelOrString(args[i]));
@@ -2418,12 +2469,20 @@ export class CaseError extends CaseEvent {
         this.message = error.message.split(R_WHITE_SPACE);
         /** @type {string} */
         this.stack = error.stack;
+
+        // Ensures that the stack contains the error name & message.
+        // This can happen when setting the 'message' after creating the error.
+        const errorNameAndMessage = String(error);
+        if (!this.stack.startsWith(errorNameAndMessage)) {
+            this.stack = errorNameAndMessage + this.stack.slice(error.name.length);
+        }
     }
 }
 
 export class Step extends CaseEvent {
     type = CASE_EVENT_TYPES.step.value;
     label = "step";
+    docLabel = "expect.step";
 
     /**
      * @param {any} value

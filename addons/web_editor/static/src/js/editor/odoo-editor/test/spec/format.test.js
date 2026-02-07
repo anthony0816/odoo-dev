@@ -237,6 +237,14 @@ describe('Format', () => {
                 contentAfter: `<p>${strong('[a')}</p><p contenteditable="false">b</p><p>${strong('c]')}</p>`,
             });
         });
+        it("should remove bold format when having newline character nodes in selection", async () => {
+            await testEditor(BasicEditor, {
+                contentBefore:
+                    "<p><strong>[abc</strong></p>\n<p><strong>def</strong></p>\n<p><strong>ghi]</strong></p>",
+                stepFunction: bold,
+                contentAfter: "<p>[abc</p>\n<p>def</p>\n<p>ghi]</p>",
+            });
+        });
 
         describe('inside container or inline with class already bold', () => {
             it('should force the font-weight to normal with an inline with class', async () => {
@@ -1275,6 +1283,57 @@ describe('Format', () => {
                 // the P could have the "/" hint but that behavior might be
                 // complex with the current implementation.
                 contentAfterEdit: `<p>${span(`[]\u200B`, 'first')}</p>`,
+            });
+        });
+    });
+
+    describe("formatting normalization", () => {
+        it("should unwrap nested identical bold tags", async () => {
+            await repeatWithBoldTags(async (tag) => {
+                await testEditor(BasicEditor, {
+                    contentBefore: `<p>a${tag(`b${tag(`c${tag(`d`)}`)}e`)}f</p>`,
+                    contentAfter: `<p>a${tag("bcde")}f</p>`,
+                });
+            });
+        });
+
+        it("should merge nested strong inside formatting tags", async () => {
+            await testEditor(BasicEditor, {
+                contentBefore: unformat(`
+                    <p>
+                        <strong>
+                            <em>
+                                <u>
+                                    <s>
+                                        text1
+                                        <strong>text2</strong>
+                                        text3
+                                    </s>
+                                </u>
+                            </em>
+                        </strong>
+                    </p>
+                `),
+                contentAfter: unformat(`
+                    <p>
+                        <strong>
+                            <em>
+                                <u>
+                                    <s>
+                                        text1text2text3
+                                    </s>
+                                </u>
+                            </em>
+                        </strong>
+                    </p>
+                `),
+            });
+        });
+
+        it("should merge nested small inside formatting tags", async () => {
+            await testEditor(BasicEditor, {
+                contentBefore: `<p><small><small>text</small></small></p>`,
+                contentAfter: `<p><small>text</small></p>`,
             });
         });
     });

@@ -91,13 +91,14 @@ class ResPartner(models.Model):
             'country_id': partner_data.get('country_id', {}).get('id'),
             'state_id': partner_data.get('state_id', {}).get('id'),
             'company_type': 'company',
-            'l10n_in_gst_treatment': 'regular',
+            'l10n_in_gst_treatment': partner_data.get('l10n_in_gst_treatment', 'regular'),
         })
         return partner_data
 
     def action_update_state_as_per_gstin(self):
         self.ensure_one()
-        state_id = self.env['res.country.state'].search([('l10n_in_tin', '=', self.vat[:2])], limit=1)
-        self.state_id = state_id
+        if self.check_vat_in(self.vat):
+            state_id = self.env['res.country.state'].search([('l10n_in_tin', '=', self.vat[:2])], limit=1)
+            self.state_id = state_id
         if self.ref_company_ids:
             self.ref_company_ids._update_l10n_in_fiscal_position()

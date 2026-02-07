@@ -1,6 +1,7 @@
 import { _t } from "@web/core/l10n/translation";
 import { AutoComplete } from "@web/core/autocomplete/autocomplete";
 import { getActiveHotkey } from "@web/core/hotkeys/hotkey_service";
+import { useInputField } from "@web/views/fields/input_field_hook";
 import { Many2XAutocomplete } from "@web/views/fields/relational_utils";
 import { Many2OneField, many2OneField } from "@web/views/fields/many2one/many2one_field";
 import { onMounted, onPatched, onWillUnmount, useEffect, useRef, useState } from "@odoo/owl";
@@ -24,7 +25,7 @@ export class ProductLabelSectionAndNoteListRender extends SectionAndNoteListRend
         if (this.productColumns.includes(column.name)) {
             return;
         }
-        super.getCellTitle(column, record);
+        return super.getCellTitle(column, record);
     }
 
     getActiveColumns(list) {
@@ -48,6 +49,10 @@ export class ProductLabelSectionAndNoteListRender extends SectionAndNoteListRend
     }
 
     isCellReadonly(column, record) {
+        if (!["name", "product_id"].includes(column.name)) {
+            return super.isCellReadonly(column, record);
+        }
+
         // The isCellReadonly method from the ListRenderer is used to determine the classes to apply to the cell.
         // We need this override to make sure some readonly classes are not applied to the cell if it is still editable.
         let isReadonly = super.isCellReadonly(column, record);
@@ -135,6 +140,14 @@ export class ProductLabelSectionAndNoteField extends Many2OneField {
         useProductAndLabelAutoresize(this.labelNode, { targetParentName: this.props.name });
         this.productNode = useRef("productNodeRef");
         useProductAndLabelAutoresize(this.productNode, { targetParentName: this.props.name });
+
+        if (this.isSectionOrNote) {
+            useInputField({
+                ref: this.labelNode,
+                fieldName: "name",
+                getValue: () => this.label,
+            });
+        }
 
         useEffect(
             () => {

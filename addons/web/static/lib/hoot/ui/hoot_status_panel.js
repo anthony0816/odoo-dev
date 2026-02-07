@@ -115,7 +115,10 @@ export class HootStatusPanel extends Component {
     static props = {};
 
     static template = xml`
-        <div class="${HootStatusPanel.name} flex items-center justify-between gap-3 px-3 py-1 bg-gray-300 dark:bg-gray-700" t-att-class="state.className">
+        <div
+            class="${HootStatusPanel.name} flex items-center justify-between gap-3 px-3 py-1 min-h-10 bg-gray-300 dark:bg-gray-700"
+            t-att-class="state.className"
+        >
             <div class="flex items-center gap-2 overflow-hidden">
                 <t t-if="runnerState.status === 'ready'">
                     Ready
@@ -241,7 +244,7 @@ export class HootStatusPanel extends Component {
 
         runner.beforeAll(this.globalSetup.bind(this));
         runner.afterAll(this.globalCleanup.bind(this));
-        if (!runner.config.headless) {
+        if (!runner.headless) {
             runner.beforeEach(this.startTimer.bind(this));
             runner.afterPostTest(this.stopTimer.bind(this));
         }
@@ -273,7 +276,7 @@ export class HootStatusPanel extends Component {
      * @param {Runner} runner
      */
     globalCleanup(runner) {
-        if (!runner.config.headless) {
+        if (!runner.headless) {
             this.stopTimer();
         }
         updateTitle(this.runnerReporting.failed > 0);

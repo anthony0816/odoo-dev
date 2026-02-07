@@ -155,9 +155,16 @@ class BaseCursor:
 
     def flush(self):
         """ Flush the current transaction, and run precommit hooks. """
-        if self.transaction is not None:
-            self.transaction.flush()
-        self.precommit.run()
+        # In case some pre-commit added another pre-commit or triggered changes
+        # in the ORM, we must flush and run it again.
+        for _ in range(10):  # limit number of iterations
+            if self.transaction is not None:
+                self.transaction.flush()
+            if not self.precommit:
+                break
+            self.precommit.run()
+        else:
+            _logger.warning("Too many iterations for flushing the cursor!")
 
     def clear(self):
         """ Clear the current transaction, and clear precommit hooks. """
@@ -298,6 +305,9 @@ class Cursor(BaseCursor):
 
         self.cache = {}
         self._now = None
+        if os.getenv('ODOO_FAKETIME_TEST_MODE') and self.dbname in tools.config['db_name'].split(','):
+            self.execute("SET search_path = public, pg_catalog;")
+            self.commit()  # ensure that the search_path remains after a rollback
 
     def __build_dict(self, row):
         return {d.name: row[i] for i, d in enumerate(self._obj.description)}

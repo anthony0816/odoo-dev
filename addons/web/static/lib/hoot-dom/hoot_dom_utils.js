@@ -17,7 +17,7 @@
  *  | "symbol"
  *  | "undefined"} ArgumentPrimitive
  *
- * @typedef {[string, any[], any]} InteractionDetails
+ * @typedef {[string, string | undefined, any[], any]} InteractionDetails
  *
  * @typedef {"interaction" | "query" | "server" | "time"} InteractionType
  */
@@ -37,12 +37,14 @@
 //-----------------------------------------------------------------------------
 
 const {
+    Array: { isArray: $isArray },
     matchMedia,
     navigator: { userAgent: $userAgent },
-    Object: { assign: $assign },
+    Object: { assign: $assign, getPrototypeOf: $getPrototypeOf },
     RegExp,
     SyntaxError,
 } = globalThis;
+const $toString = Object.prototype.toString;
 
 //-----------------------------------------------------------------------------
 // Internal
@@ -53,27 +55,32 @@ const {
  * @param {InteractionType} type
  * @param {T} fn
  * @param {string} name
+ * @param {string} [alias]
  * @returns {T}
  */
-function makeInteractorFn(type, fn, name) {
+function makeInteractorFn(type, fn, name, alias) {
     return {
-        [name](...args) {
+        [alias || name](...args) {
             const result = fn(...args);
-            if (result instanceof Promise) {
+            if (isInstanceOf(result, Promise)) {
                 for (let i = 0; i < args.length; i++) {
-                    if (args[i] instanceof Promise) {
+                    if (isInstanceOf(args[i], Promise)) {
                         // Get promise result for async arguments if possible
                         args[i].then((result) => (args[i] = result));
                     }
                 }
                 return result.then((promiseResult) =>
-                    dispatchInteraction(type, name, args, promiseResult)
+                    dispatchInteraction(type, name, alias, args, promiseResult)
                 );
             } else {
-                return dispatchInteraction(type, name, args, result);
+                return dispatchInteraction(type, name, alias, args, result);
             }
         },
-    }[name];
+    }[alias || name];
+}
+
+function polyfillIsError(value) {
+    return $toString.call(value) === "[object Error]";
 }
 
 const GRAYS = {
@@ -204,6 +211,7 @@ const COLORS = {
 };
 const DEBUG_NAMESPACE = "hoot";
 
+const isError = typeof Error.isError === "function" ? Error.isError : polyfillIsError;
 const interactionBus = new EventTarget();
 const preferredColorScheme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 
@@ -230,20 +238,21 @@ export function addInteractionListener(types, callback) {
 /**
  * @param {InteractionType} type
  * @param {string} name
+ * @param {string | undefined} alias
  * @param {any[]} args
  * @param {any} returnValue
  */
-export function dispatchInteraction(type, name, args, returnValue) {
+export function dispatchInteraction(type, name, alias, args, returnValue) {
     interactionBus.dispatchEvent(
         new CustomEvent(type, {
-            detail: [name, args, returnValue],
+            detail: [name, alias, args, returnValue],
         })
     );
     return returnValue;
 }
 
 /**
- * @param  {...any} helpers
+ * @param {...any} helpers
  */
 export function exposeHelpers(...helpers) {
     let nameSpaceIndex = 1;
@@ -292,7 +301,7 @@ export function getTag(node) {
 export function interactor(type, fn) {
     return $assign(makeInteractorFn(type, fn, fn.name), {
         as(alias) {
-            return makeInteractorFn(type, fn, alias);
+            return makeInteractorFn(type, fn, fn.name, alias);
         },
         get silent() {
             return fn;
@@ -305,6 +314,50 @@ export function interactor(type, fn) {
  */
 export function isFirefox() {
     return /firefox/i.test($userAgent);
+}
+
+/**
+ * Cross-realm equivalent to 'instanceof'.
+ * Can be called with multiple constructors, and will return true if the given object
+ * is an instance of any of them.
+ *
+ * @param {unknown} instance
+ * @param {...{ name: string }} classes
+ */
+export function isInstanceOf(instance, ...classes) {
+    if (!classes.length) {
+        return instance instanceof classes[0];
+    }
+    if (!instance || Object(instance) !== instance) {
+        // Object is falsy or a primitive (null, undefined and primitives cannot be the instance of anything)
+        return false;
+    }
+    for (const cls of classes) {
+        if (instance instanceof cls) {
+            return true;
+        }
+        const targetName = cls.name;
+        if (!targetName) {
+            return false;
+        }
+        if (targetName === "Array") {
+            return $isArray(instance);
+        }
+        if (targetName === "Error") {
+            return isError(instance);
+        }
+        if ($toString.call(instance) === `[object ${targetName}]`) {
+            return true;
+        }
+        let { constructor } = instance;
+        while (constructor) {
+            if (constructor.name === targetName) {
+                return true;
+            }
+            constructor = $getPrototypeOf(constructor);
+        }
+    }
+    return false;
 }
 
 /**
@@ -332,7 +385,7 @@ export function parseRegExp(value, options) {
         try {
             return new RegExp(unified, flag);
         } catch (error) {
-            if (error instanceof SyntaxError && options?.safe) {
+            if (isInstanceOf(error, SyntaxError) && options?.safe) {
                 return value;
             } else {
                 throw error;
@@ -361,7 +414,7 @@ export function toSelector(node, options) {
 
 export class HootDebugHelpers {
     /**
-     * @param  {...any} helpers
+     * @param {...any} helpers
      */
     constructor(...helpers) {
         $assign(this, ...helpers);

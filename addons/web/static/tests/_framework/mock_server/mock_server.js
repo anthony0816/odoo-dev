@@ -1,6 +1,14 @@
-import { before, createJobScopedGetter, expect, getCurrent, registerDebugInfo } from "@odoo/hoot";
-import { mockFetch, mockWebSocket } from "@odoo/hoot-mock";
-import { RPCError } from "@web/core/network/rpc";
+import {
+    before,
+    createJobScopedGetter,
+    expect,
+    getCurrent,
+    mockFetch,
+    mockLocation,
+    mockWebSocket,
+    registerDebugInfo,
+} from "@odoo/hoot";
+import { makeErrorFromResponse, RPCError } from "@web/core/network/rpc";
 import { registry } from "@web/core/registry";
 import { ensureArray, isIterable } from "@web/core/utils/arrays";
 import { isObject } from "@web/core/utils/objects";
@@ -63,22 +71,22 @@ const { DateTime } = luxon;
  *  pure?: boolean;
  * }} RouteOptions
  *
- * @typedef {`/${string}`} RoutePath
+ * @typedef {`${string}/${string}`} RoutePath
  *
  * @typedef {{
  *  actions?: Partial<MockServer["actions"]>;
  *  lang?: string;
- *  lang_parameters?: Partial<MockServer["lang_parameters"]>;
+ *  lang_parameters?: Partial<MockServer["_lang_parameters"]>;
  *  menus?: MenuDefinition[];
  *  models?: Iterable<ModelConstructor>;
- *  modules?: Partial<MockServer["modules"]>;
+ *  modules?: Partial<MockServer["_modules"]>;
  *  multi_lang?: import("../mock_server_state.hoot").ServerState["multiLang"];
  *  routes?: Parameters<MockServer["_onRpc"]>;
  *  timezone?: string;
  *  translations?: Record<string, string>;
  * }} ServerParams
  *
- * @typedef {import("@odoo/hoot-mock").ServerWebSocket} ServerWebSocket
+ * @typedef {import("@odoo/hoot").ServerWebSocket} ServerWebSocket
  *
  * @typedef {string | Iterable<string> | RegExp} StringMatcher
  *
@@ -182,7 +190,28 @@ function getCurrentMockServer() {
 }
 
 /**
- * @param {MockServer["models"]}
+ * @param {RequestInit} init
+ */
+function getJsonRpcParams({ headers, body }) {
+    if (headers.get("Content-Type") !== "application/json" || typeof body !== "string") {
+        return null;
+    }
+    try {
+        const parsedParams = JSON.parse(body);
+        return {
+            id: parsedParams.id,
+            jsonrpc: parsedParams.jsonrpc,
+        };
+    } catch {
+        return {
+            id: nextJsonRpcId++,
+            jsonrpc: "2.0",
+        };
+    }
+}
+
+/**
+ * @param {MockServer["_models"]}
  * @returns {MockServerEnvironment}
  */
 function makeServerEnv(models) {
@@ -218,12 +247,9 @@ function match(target, matchers) {
  * @param {string} modelName
  */
 function modelNotFoundError(modelName, consequence) {
-    let message = `cannot find a definition for model "${modelName}"`;
-    if (consequence) {
-        message += `: ${consequence}`;
-    }
-    message += ` (did you forget to use \`defineModels()?\`)`;
-    return new MockServerError(message);
+    return new MockServerError(
+        `Cannot find a definition for model "${modelName}": ${consequence} (did you forget to use \`defineModels()?\`)`
+    );
 }
 
 /**
@@ -336,16 +362,18 @@ const ROOT_MENU = {
     appID: "root",
 };
 
-const R_DATASET_ROUTE = /\/web\/dataset\/call_(button|kw)\/[\w.-]+\/(?<step>\w+)/;
-const R_ROUTE_PARAM = /<((?<type>\w+):)?(?<name>[\w-]+)>/g;
+const R_DATASET_ROUTE = /\/web\/dataset\/call_(?:button|kw)\/[\w.-]+\/(?<step>\w+)/;
+const R_URL_SPECIAL_CHARACTERS = /[.$+()]/g;
+const R_ROUTE_PARAM = /<(?:(?<type>\w+):)?(?<name>[\w-]+)>/g;
 const R_WILDCARD = /\*+/g;
 const R_WEBCLIENT_ROUTE = /(?<step>\/web\/webclient\/\w+)/;
 
-const mockRpcRegistry = registry.category("mock_rpc");
 /** @type {WeakMap<() => any, MockServer>} */
 const mockServers = new WeakMap();
 /** @type {WeakSet<typeof Model>} */
 const seenModels = new WeakSet();
+
+let nextJsonRpcId = 1e9;
 
 //-----------------------------------------------------------------------------
 // Exports
@@ -355,7 +383,7 @@ export class MockServer {
     /** @type {MockServer | null} */
     static get current() {
         const mockServer = getCurrentMockServer();
-        return mockServer?.started ? mockServer : null;
+        return mockServer?._started ? mockServer : null;
     }
 
     static get env() {
@@ -366,8 +394,17 @@ export class MockServer {
         return serverState;
     }
 
-    // Server params
-    lang_parameters = {
+    /** @type {ActionDefinition[]} */
+    actions = [];
+    /** @type {MenuDefinition[]} */
+    menus = [];
+
+    // Server parameters (private)
+
+    /**
+     * @private
+     */
+    _lang_parameters = {
         date_format: "%m/%d/%Y",
         decimal_point: ".",
         direction: "ltr",
@@ -377,37 +414,50 @@ export class MockServer {
         thousands_sep: ",",
         week_start: 7,
     };
-    modules = {
+    /**
+     * @private
+     * @type {Record<string, Model>}
+     */
+    _models = Object.create(null);
+    /**
+     * @private
+     * @type {Model[]}
+     */
+    _modelSpecs = [];
+    /**
+     * @private
+     * @type {Set<string>}
+     */
+    _modelNamesToFetch = new Set();
+    /**
+     * @private
+     */
+    _modules = {
         web: { messages: [] },
     };
-
-    // Data
-    /** @type {ActionDefinition[]} */
-    actions = [];
-    /** @type {MenuDefinition[]} */
-    menus = [];
-    /** @type {Record<string, Model>} */
-    models = Object.create(null);
-    /** @type {Model[]} */
-    modelSpecs = [];
-    /** @type {Set<string>} */
-    modelNamesToFetch = new Set();
-
-    // Routes
-    /** @type {[StringMatchers, StringMatchers, OrmCallback][]>} */
-    ormListeners = [];
-    /** @type {[RegExp[], RouteCallback, RouteOptions][]} */
-    routes = [];
-    started = false;
-
+    /**
+     * @private
+     * @type {[StringMatchers, StringMatchers, OrmCallback][]>}
+     */
+    _ormListeners = [];
+    /**
+     * @private
+     * @type {[[RegExp, boolean][], RouteCallback, RouteOptions][]}
+     */
+    _routes = [];
+    /**
+     * @private
+     */
+    _started = false;
     /**
      * WebSocket connections
+     * @private
      * @type {ServerWebSocket[]}
      */
-    websockets = [];
+    _websockets = [];
 
-    // Server environment
-    env = makeServerEnv(this.models);
+    // Server environment (needs '_models' to be initialized first)
+    env = makeServerEnv(this._models);
 
     /**
      * @param {Partial<ServerParams>} params
@@ -422,8 +472,8 @@ export class MockServer {
             assign(serverState, "lang", params.lang);
         }
         if (params.lang_parameters) {
-            // Never fully replace "lang_parameters"
-            Object.assign(this.lang_parameters, params.lang_parameters);
+            // Never fully replace "_lang_parameters"
+            Object.assign(this._lang_parameters, params.lang_parameters);
         }
         if (params.menus) {
             assign(this, "menus", params.menus);
@@ -431,18 +481,18 @@ export class MockServer {
         if (params.models) {
             assign(
                 this,
-                "modelSpecs",
+                "_modelSpecs",
                 [...params.models].map((ModelClass) => this._getModelDefinition(ModelClass))
             );
-            if (this.started) {
+            if (this._started) {
                 await this._loadModels();
             }
         }
         if (params.modules) {
             for (const [module, values] in Object.entries(params.modules)) {
-                this.modules[module] ||= { messages: [] };
+                this._modules[module] ||= { messages: [] };
                 assign(
-                    this.modules[module],
+                    this._modules[module],
                     "messages",
                     parseTranslations(values.message || values)
                 );
@@ -455,7 +505,7 @@ export class MockServer {
             assign(serverState, "timezone", params.timezone);
         }
         if (params.translations) {
-            assign(this.modules.web, "messages", parseTranslations(params.translations));
+            assign(this._modules.web, "messages", parseTranslations(params.translations));
         }
         if (params.routes) {
             for (const args of params.routes) {
@@ -470,14 +520,14 @@ export class MockServer {
      * @param {string} [url]
      */
     getWebSockets(url) {
-        return url ? this.websockets.filter((ws) => ws.url.includes(url)) : this.websockets;
+        return url ? this._websockets.filter((ws) => ws.url.includes(url)) : this._websockets;
     }
 
     async start() {
-        if (this.started) {
-            throw new MockServerError("MockServer has already been started");
+        if (this._started) {
+            throw new MockServerError("MockServer has already been _started");
         }
-        this.started = true;
+        this._started = true;
 
         registerDebugInfo("mock server", this);
 
@@ -488,32 +538,32 @@ export class MockServer {
         // Set default routes
         this._onRoute(["/web/action/load"], this.loadAction);
         this._onRoute(["/web/action/load_breadcrumbs"], this.loadActionBreadcrumbs);
-        this._onRoute(["/web/bundle/<string:bundle_name>"], this.loadBundle, {
-            pure: true,
-        });
-        this._onRoute(["/web/dataset/call_kw", "/web/dataset/call_kw/<path:path>"], this.callKw, {
-            final: true,
-        });
+        this._onRoute(["/web/bundle/<string:bundle_name>"], this.loadBundle);
         this._onRoute(
-            ["/web/dataset/call_button", "/web/dataset/call_button/<path:path>"],
+            [
+                "/web/dataset/call_kw",
+                "/web/dataset/call_kw/<path:path>",
+                "/web/dataset/call_button",
+                "/web/dataset/call_button/<path:path>",
+            ],
             this.callKw,
             { final: true }
         );
         this._onRoute(["/web/dataset/resequence"], this.resequence);
-        this._onRoute(["/web/image/<string:model>/<int:id>/<string:field>"], this.loadImage, {
-            pure: true,
-        });
-        this._onRoute(["/web/webclient/load_menus/<string:unique>"], this.loadMenus, {
-            pure: true,
-        });
-        this._onRoute(["/web/webclient/translations/<string:unique>"], this.loadTranslations, {
-            pure: true,
-        });
+        this._onRoute(["/web/image/<string:model>/<int:id>/<string:field>"], this.loadImage);
+        this._onRoute(["/web/webclient/load_menus/<string:unique>"], this.loadMenus);
+        this._onRoute(["/web/webclient/translations/<string:unique>"], this.loadTranslations);
 
         // Add routes from "mock_rpc" registry
-        for (const [route, callback] of mockRpcRegistry.getEntries()) {
-            if (typeof callback === "function") {
-                this._onRpc(route, callback);
+        const mockRpcEntries = registry.category("mock_rpc").getEntries();
+        if (mockRpcEntries.length) {
+            console.warn(
+                "Warning: 'mock_rpc' registry is deprecated; use 'onRpc' with the same parameters instead."
+            );
+            for (const [route, callback] of mockRpcEntries) {
+                if (typeof callback === "function") {
+                    this._onRpc(route, callback);
+                }
             }
         }
 
@@ -532,9 +582,7 @@ export class MockServer {
      * @param {OrmParams} params
      */
     _callOrm(params) {
-        const { method, model: modelName } = params;
-        const args = params.args || [];
-        const kwargs = makeKwArgs(params.kwargs || {});
+        const { args, method, model: modelName, kwargs } = params;
 
         // Try to find a model method
         if (modelName) {
@@ -560,7 +608,7 @@ export class MockServer {
             }
         }
 
-        throw new MockServerError(`unimplemented ORM method: ${modelName}.${method}`);
+        throw new MockServerError(`Unimplemented ORM method: ${modelName}.${method}`);
     }
 
     /**
@@ -591,7 +639,7 @@ export class MockServer {
      */
     _findOrmListeners({ method, model }) {
         const callbacks = [this._callOrm];
-        for (const [modelMatchers, methodMatchers, callback] of this.ormListeners) {
+        for (const [modelMatchers, methodMatchers, callback] of this._ormListeners) {
             if (match(model, modelMatchers) && match(method, methodMatchers)) {
                 callbacks.unshift(callback);
             }
@@ -601,14 +649,16 @@ export class MockServer {
 
     /**
      * @private
-     * @param {string} route
+     * @param {URL} url
      */
-    _findRouteListeners(route) {
+    _findRouteListeners(url) {
+        const fullRoute = url.origin + url.pathname;
         /** @type {[RouteCallback, Record<string, string>, RouteOptions][]} */
         const listeners = [];
-        for (const [routeRegexes, callback, options] of this.routes) {
-            for (const regex of routeRegexes) {
-                const argsMatch = route.match(regex);
+        for (const [routeRegexes, callback, options] of this._routes) {
+            for (const [regex, partialMatch] of routeRegexes) {
+                const routePart = partialMatch ? url.pathname : fullRoute;
+                const argsMatch = routePart.match(regex);
                 if (argsMatch) {
                     listeners.unshift([callback, argsMatch.groups, options]);
                 }
@@ -697,7 +747,7 @@ export class MockServer {
             default: {
                 if (!(action.type in ACTION_TYPES)) {
                     throw new MockServerError(
-                        `invalid action type "${action.type}" in action ${id}`
+                        `Invalid action type "${action.type}" in action ${id}`
                     );
                 }
             }
@@ -715,7 +765,7 @@ export class MockServer {
 
         // Server model
         if (ModelClass._fetch) {
-            this.modelNamesToFetch.add(model._name);
+            this._modelNamesToFetch.add(model._name);
         }
 
         return model;
@@ -723,75 +773,103 @@ export class MockServer {
 
     /**
      * @private
-     * @param {string} url
+     * @param {string | URL} input
      * @param {RequestInit} init
      */
-    async _handleRequest(url, init) {
-        const method = init?.method?.toUpperCase() || (init?.body ? "POST" : "GET");
-        const request = new Request(url, { method, ...(init || {}) });
+    async _handleRequest(input, init) {
+        const request = new Request(input, init);
+        const url = new URL(request.url);
+        let jsonRpcParams = getJsonRpcParams(init);
+        let error = null;
+        let result = null;
 
-        const route = new URL(request.url).pathname;
-        const listeners = this._findRouteListeners(route);
+        const listeners = this._findRouteListeners(url);
         if (!listeners.length) {
-            throw new MockServerError(`unimplemented server route: ${route}`);
+            if (url.origin === mockLocation.origin) {
+                error = new MockServerError(`Unimplemented server route: ${url.pathname}`);
+            } else {
+                error = new MockServerError(
+                    `Unimplemented server external URL: ${url.origin + url.pathname}`
+                );
+            }
+        } else {
+            for (const [callback, routeParams, { final, pure }] of listeners) {
+                try {
+                    const callbackResult = await callback.call(this, request, routeParams);
+                    if (result instanceof Error) {
+                        error = callbackResult;
+                    } else {
+                        result = callbackResult;
+                    }
+                } catch (err) {
+                    error = err instanceof Error ? err : new Error(err);
+                }
+                if (final || error || (result !== null && result !== undefined)) {
+                    if (pure || result instanceof Response) {
+                        jsonRpcParams = null;
+                    }
+                    break;
+                }
+            }
         }
 
-        let result = null;
-        for (const [callback, routeParams, routeOptions] of listeners) {
-            const { final, pure } = routeOptions;
-            try {
-                result = await callback.call(this, request, routeParams);
-            } catch (error) {
-                if (pure) {
-                    throw error;
-                }
-                result = error instanceof Error ? error : new Error(error);
-            }
-            if (final || (result !== null && result !== undefined)) {
-                if (pure) {
-                    return result;
-                }
-                if (result instanceof RPCError) {
-                    return { error: result, result: null };
-                }
-                if (result instanceof Error) {
-                    return {
-                        error: {
-                            code: 418,
-                            data: result,
-                            message: result.message,
-                            type: result.name,
-                        },
-                        result: null,
+        // We have several scenarios at this point:
+        //
+        // - either the request is considered to be a JSON-RPC:
+        //  -> the response is formatted accordingly (i.e. { error, result })
+        //
+        // - in other cases:
+        //  -> the response is returned or thrown as-is.
+        if (jsonRpcParams) {
+            if (error) {
+                if (error instanceof RPCError) {
+                    jsonRpcParams.error = { ...error };
+                } else {
+                    jsonRpcParams.error = {
+                        ...makeErrorFromResponse({
+                            code: 200,
+                            data: {
+                                name: error.name,
+                                message: error.message,
+                                subType: error.type,
+                            },
+                            message: error.message,
+                            type: error.name,
+                        }),
                     };
                 }
-                return { error: null, result };
+                return jsonRpcParams;
+            } else {
+                jsonRpcParams.result = result;
+                return jsonRpcParams;
             }
+        } else if (error) {
+            throw error;
+        } else {
+            return result;
         }
-
-        // There was a matching controller that wasn't call_kw but it didn't return anything: treat it as JSON
-        return { error: null, result };
     }
 
     /**
+     * @private
      * @param {ServerWebSocket} webSocket
      */
     _handleWebSocket(webSocket) {
-        this.websockets.push(webSocket);
+        this._websockets.push(webSocket);
     }
 
     /**
      * @private
      */
     async _loadModels() {
-        const models = this.modelSpecs;
+        const models = this._modelSpecs;
         const serverModelInheritances = new Set();
-        this.modelSpecs = [];
+        this._modelSpecs = [];
 
         let serverModels = {};
-        if (this.modelNamesToFetch.size) {
-            serverModels = await fetchModelDefinitions(this.modelNamesToFetch);
-            this.modelNamesToFetch.clear();
+        if (this._modelNamesToFetch.size) {
+            serverModels = await fetchModelDefinitions(this._modelNamesToFetch);
+            this._modelNamesToFetch.clear();
         }
 
         // First iteration: set own properties and fields for each model
@@ -849,7 +927,7 @@ export class MockServer {
             if (model._rec_name) {
                 if (!(model._rec_name in model._fields)) {
                     throw new MockServerError(
-                        `invalid _rec_name "${model._rec_name}" on model "${model._name}": field does not exist`
+                        `Invalid _rec_name "${model._rec_name}" on model "${model._name}": field does not exist`
                     );
                 }
             } else if ("name" in model._fields) {
@@ -859,16 +937,22 @@ export class MockServer {
             }
 
             // Find duplicate models
-            if (model._name in this.models) {
-                Object.setPrototypeOf(Object.getPrototypeOf(model), this.models[model._name]);
+            if (model._name in this._models) {
+                const existingModel = this._models[model._name];
+                // Add fields added from parent, since public class instance fields
+                // are not included in the prototype.
+                for (const fieldName in existingModel._fields) {
+                    model._fields[fieldName] ??= existingModel._fields[fieldName];
+                }
+                Object.setPrototypeOf(Object.getPrototypeOf(model), existingModel);
             } else if (model._name in this.env) {
                 throw new MockServerError(
-                    `cannot register model "${model._name}": a server environment property with the same name already exists`
+                    `Cannot register model "${model._name}": a server environment property with the same name already exists`
                 );
             }
 
             // Register models on mock server
-            this.models[model._name] = model;
+            this._models[model._name] = model;
         }
 
         // Second iteration: model inheritance +
@@ -878,7 +962,7 @@ export class MockServer {
                 if (!modelName) {
                     continue;
                 }
-                const parentModel = this.models[modelName];
+                const parentModel = this._models[modelName];
                 if (parentModel) {
                     for (const fieldName in parentModel._fields) {
                         model._fields[fieldName] ??= parentModel._fields[fieldName];
@@ -896,7 +980,7 @@ export class MockServer {
             // Re-iterate over fields after inheritances have been applied
             for (const [fieldName, field] of Object.entries(model._fields)) {
                 // Check missing models
-                if (field.relation && !this.models[field.relation]) {
+                if (field.relation && !this._models[field.relation]) {
                     if (field[S_SERVER_FIELD]) {
                         delete model._fields[fieldName];
                         continue;
@@ -924,7 +1008,7 @@ export class MockServer {
                         computeFn = model[computeFn];
                         if (typeof computeFn !== "function") {
                             throw new MockServerError(
-                                `could not find compute function "${computeFn}" on model "${model._name}"`
+                                `Could not find compute function "${computeFn}" on model "${model._name}"`
                             );
                         }
                     }
@@ -944,7 +1028,7 @@ export class MockServer {
                 for (const fieldName in record) {
                     if (!(fieldName in model._fields)) {
                         throw new MockServerError(
-                            `unknown field "${fieldName}" on ${getRecordQualifier(
+                            `Unknown field "${fieldName}" on ${getRecordQualifier(
                                 record
                             )} in model "${model._name}"`
                         );
@@ -953,7 +1037,7 @@ export class MockServer {
                 if (record.id) {
                     if (seenIds.has(record.id)) {
                         throw new MockServerError(
-                            `duplicate ID ${record.id} in model "${model._name}"`
+                            `Duplicate ID ${record.id} in model "${model._name}"`
                         );
                     }
                     seenIds.add(record.id);
@@ -982,7 +1066,7 @@ export class MockServer {
         }
 
         // creation of the ir.model.fields records, required for tracked fields
-        const IrModelFields = this.models["ir.model.fields"];
+        const IrModelFields = this._models["ir.model.fields"];
         if (IrModelFields) {
             for (const model of models) {
                 for (const field of Object.values(model._fields)) {
@@ -1028,10 +1112,12 @@ export class MockServer {
         const model = ensureArray(args.pop() || "*");
 
         if (typeof callback !== "function") {
-            throw new Error(`onRpc: expected callback to be a function, got: ${callback}`);
+            throw new MockServerError(
+                `onRpc: expected callback to be a function, got: ${callback}`
+            );
         }
 
-        this.ormListeners.push([model, method, callback]);
+        this._ormListeners.push([model, method, callback]);
     }
 
     /**
@@ -1043,6 +1129,9 @@ export class MockServer {
     _onRoute(routes, callback, options) {
         const routeRegexes = routes.map((route) => {
             const regexString = route
+                // Only replace special RegExp character that can also be included
+                // in valid URLs
+                .replaceAll(R_URL_SPECIAL_CHARACTERS, "\\$&")
                 // Replace parameters by regex notation and store their names
                 .replaceAll(R_ROUTE_PARAM, (...args) => {
                     const { name, type } = args.pop();
@@ -1050,10 +1139,10 @@ export class MockServer {
                 })
                 // Replace glob wildcards by regex wildcard
                 .replaceAll(R_WILDCARD, ".*");
-            return new RegExp(`^${regexString}$`, "i");
+            return [new RegExp(`^${regexString}$`, "i"), route.startsWith("/")];
         });
 
-        this.routes.push([routeRegexes, callback, options || {}]);
+        this._routes.push([routeRegexes, callback, options || {}]);
     }
 
     /**
@@ -1087,7 +1176,7 @@ export class MockServer {
         const ormArgs = [];
         const routeArgs = [];
         for (const val of ensureArray(args.shift())) {
-            if (typeof val === "string" && val.startsWith("/")) {
+            if (typeof val === "string" && val.includes("/")) {
                 routeArgs.push(val);
             } else {
                 ormArgs.push(val);
@@ -1116,6 +1205,8 @@ export class MockServer {
         };
 
         const { params } = await request.json();
+        params.args ||= [];
+        params.kwargs = makeKwArgs(params.kwargs || {});
         const callbackParams = {
             parent: callNextOrmCallback,
             request,
@@ -1158,11 +1249,13 @@ export class MockServer {
                 }
             } else if (model) {
                 if (!resId) {
-                    throw new Error("Actions with a 'model' should also have a 'resId'");
+                    throw new MockServerError("Actions with a 'model' should also have a 'resId'");
                 }
                 displayName = this.env[model].browse(resId)[0].display_name;
             } else {
-                throw new Error("Actions should have either an 'action' (ID or path) or a 'model'");
+                throw new MockServerError(
+                    "Actions should have either an 'action' (ID or path) or a 'model'"
+                );
             }
             return { display_name: displayName };
         });
@@ -1225,7 +1318,7 @@ export class MockServer {
         }
         const missingMenuIds = [...allChildIds].filter((id) => !(id in menuDict));
         if (missingMenuIds.length) {
-            throw new MockServerError(`missing menu ID(s): ${missingMenuIds.join(", ")}`);
+            throw new MockServerError(`Missing menu ID(s): ${missingMenuIds.join(", ")}`);
         }
         return menuDict;
     }
@@ -1234,14 +1327,14 @@ export class MockServer {
      * @type {RouteCallback<"unique">}
      */
     async loadTranslations() {
-        const langParameters = { ...this.lang_parameters };
+        const langParameters = { ...this._lang_parameters };
         if (typeof langParameters.grouping !== "string") {
             langParameters.grouping = JSON.stringify(langParameters.grouping);
         }
         return {
             lang: serverState.lang,
             lang_parameters: langParameters,
-            modules: this.modules,
+            modules: this._modules,
             multi_lang: serverState.multiLang,
         };
     }

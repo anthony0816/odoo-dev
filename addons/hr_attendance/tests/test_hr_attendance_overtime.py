@@ -2,7 +2,7 @@
 from datetime import date, datetime
 from freezegun import freeze_time
 
-from odoo.tests import new_test_user
+from odoo.tests import Form, new_test_user
 from odoo.tests.common import tagged, TransactionCase
 
 @tagged('post_install', '-at_install', 'hr_attendance_overtime')
@@ -444,6 +444,68 @@ class TestHrAttendanceOvertime(TransactionCase):
         # Employee with flexible working schedule should not be checked out
         self.assertEqual(attendance_flexible_pending.check_out, False)
 
+    @freeze_time("2024-02-1 23:00:00")
+    def test_auto_check_out_more_one_day_delta(self):
+        """ Test that the checkout is correct if the delta between the check in and now is > 24 hours"""
+        self.company.write({
+            'auto_check_out': True,
+            'auto_check_out_tolerance': 1
+        })
+
+        attendance_utc_pending = self.env['hr.attendance'].create({
+            'employee_id': self.employee.id,
+            'check_in': datetime(2024, 1, 30, 8, 0)
+        })
+
+        self.assertEqual(attendance_utc_pending.check_out, False)
+        self.env['hr.attendance']._cron_auto_check_out()
+        self.assertEqual(attendance_utc_pending.check_out, datetime(2024, 1, 30, 18, 0))
+
+    @freeze_time("2024-02-05 23:00:00")
+    def test_auto_checkout_past_day(self):
+        self.company.write({
+            'auto_check_out': True,
+            'auto_check_out_tolerance': 1,
+        })
+        attendance_utc_pending_7th_day = self.env['hr.attendance'].create({
+            'employee_id': self.employee.id,
+            'check_in': datetime(2024, 2, 1, 14, 0),
+        })
+        self.assertEqual(attendance_utc_pending_7th_day.check_out, False)
+        self.env['hr.attendance']._cron_auto_check_out()
+        self.assertEqual(attendance_utc_pending_7th_day.check_out, datetime(2024, 2, 1, 23, 0))
+
+    @freeze_time("2024-02-2 20:00:00")
+    def test_auto_check_out_calendar_tz(self):
+        """Check expected working hours and previously worked hours are from the correct day when
+        using a calendar with a different timezone."""
+        self.company.write({
+            'auto_check_out': True,
+            'auto_check_out_tolerance': 1
+        })
+        self.jpn_employee.resource_calendar_id.tz = 'Asia/Tokyo'  # UTC+9
+        self.jpn_employee.resource_calendar_id.attendance_ids.filtered(lambda a: a.dayofweek == "4" and a.day_period in ["lunch", "afternoon"]).unlink()
+
+        attendances_jpn = self.env['hr.attendance'].create([
+            {
+                'employee_id': self.jpn_employee.id,
+                'check_in': datetime(2024, 2, 1, 6, 0),
+                'check_out': datetime(2024, 2, 1, 7, 0)
+            },
+            {
+                'employee_id': self.jpn_employee.id,
+                'check_in': datetime(2024, 2, 1, 21, 0),
+                'check_out': datetime(2024, 2, 1, 22, 0)
+            },
+            {
+                'employee_id': self.jpn_employee.id,
+                'check_in': datetime(2024, 2, 1, 23, 0)
+            }
+        ])
+
+        self.env['hr.attendance']._cron_auto_check_out()
+        self.assertEqual(attendances_jpn[2].check_out, datetime(2024, 2, 2, 3, 0), "Check-out after 4 hours (4 hours expected from calendar + 1 hours tolerance - 1 hour previous attendance)")
+
     def test_auto_check_out_lunch_period(self):
         Attendance = self.env['hr.attendance']
         self.company.write({
@@ -673,3 +735,125 @@ class TestHrAttendanceOvertime(TransactionCase):
 
         attendance.action_refuse_overtime()
         self.assertEqual(attendance.validated_overtime_hours, 0)
+
+    def test_no_validation_extra_hours_change(self):
+        """
+         In case of attendances requiring no validation, check that extra hours are not recomputed
+         if the value is different from `validated_hours` (meaning it has been modified by the user).
+        """
+        self.company.attendance_overtime_validation = "no_validation"
+
+        attendance = self.env['hr.attendance']
+        # Form is used here as it will send a `validated_overtime_hours` value of 0 when saved.
+        # This should not be considered as a manual edition of the field by the user.
+        with Form(attendance) as attendance_form:
+            attendance_form.employee_id = self.employee
+            attendance_form.check_in = datetime(2023, 1, 2, 8, 0)
+            attendance_form.check_out = datetime(2023, 1, 2, 18, 0)
+        attendance = attendance_form.save()
+
+        self.assertAlmostEqual(attendance.overtime_hours, 1, 2)
+        self.assertAlmostEqual(attendance.validated_overtime_hours, 1, 2)
+
+        # Check changing check out through UI correctly recomputes validated_overtime_hours as the
+        # field has not been modified yet.
+        with Form(attendance) as attendance_form:
+            attendance_form.check_out = datetime(2023, 1, 2, 19, 0)
+        self.assertAlmostEqual(attendance.overtime_hours, 2, 2)
+        self.assertAlmostEqual(attendance.validated_overtime_hours, 2, 2)
+
+        attendance.validated_overtime_hours = previous = 0.5
+        self.assertNotEqual(attendance.validated_overtime_hours, attendance.overtime_hours)
+
+        # Create another attendance for the same employee
+        self.env['hr.attendance'].create({
+            'employee_id': self.employee.id,
+            'check_in': datetime(2023, 1, 4, 8, 0),
+            'check_out': datetime(2023, 1, 4, 18, 0)
+        })
+        self.assertEqual(attendance.validated_overtime_hours, previous, "Extra hours shouldn't be recomputed")
+
+        # Changing check out should recompute extra hours
+        with Form(attendance) as attendance_form:
+            attendance_form.check_out = datetime(2023, 1, 2, 19, 15)
+        self.assertAlmostEqual(attendance.validated_overtime_hours, 2.25, 2)
+
+    def test_company_tolerance_multiple_attendances(self):
+        """
+        This test checks that the company tolerance is correct in case of multiple attendances registered
+        for a same day.
+        """
+        self.company.overtime_company_threshold = 15
+        attendance_1, attendance_2, attendance_3, attendance_4, attendance_5, attendance_6 = self.env['hr.attendance'].create([{
+            'employee_id': self.employee.id,
+            'check_in': datetime(2023, 1, 4, 7, 0),
+            'check_out': datetime(2023, 1, 4, 8, 0)
+        }, {
+            'employee_id': self.employee.id,
+            'check_in': datetime(2023, 1, 4, 12, 0),
+            'check_out': datetime(2023, 1, 4, 20, 30)
+        }, {
+            'employee_id': self.employee.id,
+            'check_in': datetime(2023, 1, 5, 7, 0),
+            'check_out': datetime(2023, 1, 5, 8, 0)
+        }, {
+            'employee_id': self.employee.id,
+            'check_in': datetime(2023, 1, 5, 12, 0),
+            'check_out': datetime(2023, 1, 5, 20, 14)
+        }, {
+            'employee_id': self.employee.id,
+            'check_in': datetime(2023, 1, 6, 7, 44),
+            'check_out': datetime(2023, 1, 6, 12, 00)
+        }, {
+            'employee_id': self.employee.id,
+            'check_in': datetime(2023, 1, 6, 13, 30),
+            'check_out': datetime(2023, 1, 6, 17, 44)
+        }])
+        expected = (0.0, 0.5, 0.0, 0.0, 0.0, 0.5)
+        actual = (
+            attendance_1.overtime_hours,
+            attendance_2.overtime_hours,
+            attendance_3.overtime_hours,
+            attendance_4.overtime_hours,
+            attendance_5.overtime_hours,
+            attendance_6.overtime_hours,
+        )
+
+        for a, e in zip(actual, expected):
+            self.assertAlmostEqual(a, e)
+
+    def test_employee_tolerance_multiple_attendances(self):
+        """
+        This test checks that the employee tolerance is correct in case of multiple attendances registered
+        for a same day.
+        """
+        self.company.overtime_employee_threshold = 15
+        attendance_1, attendance_2, attendance_3, attendance_4, attendance_5, attendance_6 = self.env['hr.attendance'].create([{
+            'employee_id': self.employee.id,
+            'check_in': datetime(2023, 1, 4, 7, 0),
+            'check_out': datetime(2023, 1, 4, 8, 0)
+        }, {
+            'employee_id': self.employee.id,
+            'check_in': datetime(2023, 1, 4, 12, 0),
+            'check_out': datetime(2023, 1, 4, 19, 30)
+        }, {
+            'employee_id': self.employee.id,
+            'check_in': datetime(2023, 1, 5, 7, 0),
+            'check_out': datetime(2023, 1, 5, 8, 0)
+        }, {
+            'employee_id': self.employee.id,
+            'check_in': datetime(2023, 1, 5, 12, 0),
+            'check_out': datetime(2023, 1, 5, 19, 54)
+        }, {
+            'employee_id': self.employee.id,
+            'check_in': datetime(2023, 1, 6, 7, 44),
+            'check_out': datetime(2023, 1, 6, 12, 00)
+        }, {
+            'employee_id': self.employee.id,
+            'check_in': datetime(2023, 1, 6, 13, 30),
+            'check_out': datetime(2023, 1, 6, 16, 44)
+        }])
+        self.assertAlmostEqual(
+            (attendance_1.overtime_hours, attendance_2.overtime_hours, attendance_3.overtime_hours, attendance_4.overtime_hours, attendance_5.overtime_hours, attendance_6.overtime_hours),
+            (0.0, -0.5, 0.0, 0.0, 0.0, -0.5)
+        )

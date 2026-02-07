@@ -112,7 +112,7 @@ class AccountReport(models.Model):
     filter_hide_0_lines = fields.Selection(
         string="Hide lines at 0",
         selection=[('by_default', "Enabled by Default"), ('optional', "Optional"), ('never', "Never")],
-        compute=lambda x: x._compute_report_option_filter('filter_hide_0_lines', 'optional'), readonly=False, store=True, depends=['root_report_id'],
+        compute=lambda x: x._compute_report_option_filter('filter_hide_0_lines', 'optional'), readonly=False, store=True, depends=['root_report_id', 'section_main_report_ids'],
     )
     filter_period_comparison = fields.Boolean(
         string="Period Comparison",
@@ -138,7 +138,7 @@ class AccountReport(models.Model):
     filter_account_type = fields.Selection(
         string="Account Types",
         selection=[('both', "Payable and receivable"), ('payable', "Payable"), ('receivable', "Receivable"), ('disabled', 'Disabled')],
-        compute=lambda x: x._compute_report_option_filter('filter_account_type', 'disabled'), readonly=False, store=True, depends=['root_report_id'],
+        compute=lambda x: x._compute_report_option_filter('filter_account_type', 'disabled'), readonly=False, store=True, depends=['root_report_id', 'section_main_report_ids'],
     )
     filter_partner = fields.Boolean(
         string="Partners",
@@ -621,11 +621,13 @@ class AccountReportExpression(models.Model):
     @api.constrains('engine', 'report_line_id')
     def _validate_engine(self):
         for expression in self:
-            if expression.engine == 'aggregation' and (expression.report_line_id.groupby or expression.report_line_id.user_groupby):
+            if expression.engine in ('aggregation', 'external') and (expression.report_line_id.groupby or expression.report_line_id.user_groupby):
+                engine_description = dict(expression._fields['engine']._description_selection(self.env))
                 raise ValidationError(_(
-                    "Groupby feature isn't supported by aggregation engine. Please remove the groupby value on '%s'",
-                    expression.report_line_id.display_name,
-                ))
+                    "Groupby feature isn't supported by '%(engine)s' engine. Please remove the groupby value on '%(report_line)s'",
+                        engine=engine_description[expression.engine],
+                        report_line=expression.report_line_id.display_name
+                    ))
 
     def _get_auditable_engines(self):
         return {'tax_tags', 'domain', 'account_codes', 'external', 'aggregation'}

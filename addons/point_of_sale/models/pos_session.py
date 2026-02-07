@@ -137,8 +137,8 @@ class PosSession(models.Model):
     @api.model
     def _load_pos_data_models(self, config_id):
         return ['pos.config', 'pos.order', 'pos.order.line', 'pos.pack.operation.lot', 'pos.payment', 'pos.payment.method', 'pos.printer',
-                        'pos.category', 'pos.bill', 'res.company', 'account.tax', 'account.tax.group', 'product.product', 'product.attribute', 'product.attribute.custom.value',
-            'product.template.attribute.line', 'product.template.attribute.value', 'product.combo', 'product.combo.item', 'product.packaging', 'res.users', 'res.partner',
+                        'pos.category', 'pos.bill', 'res.company', 'account.tax', 'account.tax.group', 'product.product', 'product.template', 'product.template.attribute.line', 'product.attribute',
+            'product.attribute.custom.value', 'product.template.attribute.value', 'product.template.attribute.exclusion', 'product.combo', 'product.combo.item', 'product.packaging', 'res.users', 'res.partner',
             'decimal.precision', 'uom.uom', 'uom.category', 'res.country', 'res.country.state', 'res.lang', 'product.pricelist', 'product.pricelist.item', 'product.category',
             'account.cash.rounding', 'account.fiscal.position', 'account.fiscal.position.tax', 'stock.picking.type', 'res.currency', 'pos.note', 'ir.ui.view', 'product.tag', 'ir.module.module']
 
@@ -160,6 +160,7 @@ class PosSession(models.Model):
         data[0]['_partner_commercial_fields'] = self.env['res.partner']._commercial_fields()
         data[0]['_server_version'] = exp_version()
         data[0]['_base_url'] = self.get_base_url()
+        data[0]['_has_cash_move_perm'] = self.env.user.has_group('account.group_account_invoice')
         data[0]['_has_available_products'] = self._pos_has_valid_product()
         data[0]['_pos_special_products_ids'] = self.env['pos.config']._get_special_products().ids
         return {
@@ -631,10 +632,10 @@ class PosSession(models.Model):
     def _get_diff_account_move_ref(self, payment_method):
         return _('Closing difference in %(payment_method)s (%(session)s)', payment_method=payment_method.name, session=self.name)
 
-    def _get_diff_vals(self, payment_method_id, diff_amount):
+    def _get_diff_vals(self, payment_method_id, diff_amount, outstanding_account=False):
         payment_method = self.env['pos.payment.method'].browse(payment_method_id)
         diff_compare_to_zero = self.currency_id.compare_amounts(diff_amount, 0)
-        source_account = payment_method.outstanding_account_id
+        source_account = payment_method.outstanding_account_id or outstanding_account
         destination_account = self.env['account.account']
 
         if (diff_compare_to_zero > 0):
@@ -1084,7 +1085,7 @@ class PosSession(models.Model):
         destination_account = self._get_receivable_account(payment_method)
 
         account_payment = self.env['account.payment'].with_context(pos_payment=True).create({
-            'amount': abs(amounts['amount']) + diff_amount,
+            'amount': abs(amounts['amount']),
             'journal_id': payment_method.journal_id.id,
             'force_outstanding_account_id': outstanding_account.id,
             'destination_account_id': destination_account.id,
@@ -1116,7 +1117,7 @@ class PosSession(models.Model):
         return account_payment.move_id.line_ids.filtered(lambda line: line.account_id == self._get_receivable_account(payment_method))
 
     def _apply_diff_on_account_payment_move(self, account_payment, payment_method, diff_amount):
-        diff_vals = self._get_diff_vals(payment_method.id, diff_amount)
+        diff_vals = self._get_diff_vals(payment_method.id, diff_amount, account_payment.outstanding_account_id)
         if not diff_vals:
             return
         source_vals, dest_vals = diff_vals
@@ -1132,6 +1133,9 @@ class PosSession(models.Model):
                     'credit': new_balance_compare_to_zero < 0 and -new_balance or 0.0
                 })
             ]
+        })
+        account_payment.write({
+            'amount': abs(new_balance),
         })
         account_payment.move_id.action_post()
 
@@ -1149,7 +1153,7 @@ class PosSession(models.Model):
 
         account_payment = self.env['account.payment'].create({
             'amount': abs(amounts['amount']),
-            'partner_id': payment.partner_id.id,
+            'partner_id': accounting_partner.id,
             'journal_id': payment_method.journal_id.id,
             'force_outstanding_account_id': outstanding_account.id,
             'destination_account_id': destination_account.id,
@@ -1668,13 +1672,13 @@ class PosSession(models.Model):
             return {}
         return self.config_id.open_ui()
 
-    def set_opening_control(self, cashbox_value: int, notes: str):
-        if self.state != 'opening_control':
-            return
+    def _set_opening_control_data(self, cashbox_value: int, notes: str):
+        """
+        Internal logic for opening the session.
+        Inherit this method to add custom logic before the sequence is assigned.
+        """
         self.state = 'opened'
         self.start_at = fields.Datetime.now()
-        if not self.rescue:
-            self.name = self.env['ir.sequence'].with_context(company_id=self.config_id.company_id.id).next_by_code('pos.session')
 
         cash_payment_method_ids = self.config_id.payment_method_ids.filtered(lambda pm: pm.is_cash_count)
         if cash_payment_method_ids:
@@ -1686,6 +1690,21 @@ class PosSession(models.Model):
             message = _('Opening control message: ')
             message += notes
             self.message_post(body=plaintext2html(message))
+
+    def set_opening_control(self, cashbox_value: int, notes: str):
+        """
+        Public method to open the session.
+        This calls the internal logic and, if successful, assigns the sequence name.
+
+        DO NOT INHERIT THIS METHOD. Inherit _set_opening_control_data instead.
+        """
+        if self.state != 'opening_control':
+            return
+
+        self._set_opening_control_data(cashbox_value, notes)
+
+        if not self.rescue:
+            self.name = self.env['ir.sequence'].with_context(company_id=self.config_id.company_id.id).next_by_code('pos.session')
 
     def _post_cash_details_message(self, state, expected, difference, notes):
         message = (state + " difference: " + self.currency_id.format(difference) + '\n' +
@@ -1757,7 +1776,7 @@ class PosSession(models.Model):
             for session in sessions
         ]
 
-        self.env['account.bank.statement.line'].sudo().create(vals_list)
+        self.env['account.bank.statement.line'].create(vals_list)
 
     def _get_attributes_by_ptal_id(self):
         # performance trick: prefetch fields with search_fetch() and fetch()
@@ -1833,7 +1852,7 @@ class PosSession(models.Model):
             ('sale_ok', '=', True),
             ('available_in_pos', '=', True),
         ])
-        if product:
+        if product and product[0].barcode == barcode:
             return {'product.product': product.with_context(product_context).read(product_fields, load=False)}
 
         domain = [('barcode', 'not in', ['', False])]
@@ -1905,6 +1924,19 @@ class PosSession(models.Model):
         session_info['nomenclature_id'] = self.company_id.nomenclature_id.id
         session_info['fallback_nomenclature_id'] = self._get_pos_fallback_nomenclature_id()
         return session_info
+
+    def _get_gc_sequence_prefix(self):
+        return ['pos.session.login_number']
+
+    @api.autovacuum
+    def _gc_session_sequences(self):
+        for prefix in self._get_gc_sequence_prefix():
+            sequences = self.env['ir.sequence'].search([('code', 'ilike', prefix)])
+            session_ids = [int(seq.code.split(prefix)[-1]) for seq in sequences if seq.code.split(prefix)[-1].isdigit()]
+            session_ids = self.env['pos.session'].search([('id', 'in', session_ids), ('state', '=', 'closed')]).ids
+            sequence_to_unlink_ids = sequences.filtered(lambda seq: seq.code in [f'{prefix}{session}' for session in session_ids])
+            if sequence_to_unlink_ids:
+                sequence_to_unlink_ids.sudo().unlink()
 
 
 class ProcurementGroup(models.Model):

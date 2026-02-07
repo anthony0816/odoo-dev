@@ -545,6 +545,8 @@ class Field(MetaField('DummyField', (object,), {}), typing.Generic[T]):
                 warnings.warn(f'Property {self}.readonly should be a boolean ({self.readonly}).')
 
             self._setup_done = True
+            # column_type might be changed during Field.setup
+            lazy_property.reset_all(self)
 
     #
     # Setup of non-related fields
@@ -899,6 +901,8 @@ class Field(MetaField('DummyField', (object,), {}), typing.Generic[T]):
     def _description_sortable(self, env):
         if self.column_type and self.store:  # shortcut
             return True
+        if self.inherited_field and self.inherited_field._description_sortable(env):  # avoid compuation for inherited field
+            return True
 
         model = env[self.model_name]
         query = model._as_query(ordered=False)
@@ -910,6 +914,8 @@ class Field(MetaField('DummyField', (object,), {}), typing.Generic[T]):
 
     def _description_groupable(self, env):
         if self.column_type and self.store:  # shortcut
+            return True
+        if self.inherited_field and self.inherited_field._description_groupable(env):  # avoid compuation for inherited field
             return True
 
         model = env[self.model_name]
@@ -924,6 +930,8 @@ class Field(MetaField('DummyField', (object,), {}), typing.Generic[T]):
     def _description_aggregator(self, env):
         if not self.aggregator or self.column_type and self.store:  # shortcut
             return self.aggregator
+        if self.inherited_field and self.inherited_field._description_aggregator(env):  # avoid compuation for inherited field
+            return self.inherited_field.aggregator
 
         model = env[self.model_name]
         query = model._as_query(ordered=False)
@@ -1576,6 +1584,14 @@ class Float(Field[float]):
         :class:`~odoo.addons.base.models.decimal_precision.DecimalPrecision` record name.
     :type digits: tuple(int,int) or str
 
+    :param min_display_digits: An int or a string referencing a
+        :class:`~odoo.addons.base.models.decimal_precision.DecimalPrecision` record name.
+        Represents the minimum number of decimal digits to display in the UI.
+        So if it's equal to 3:
+        - `3.1` will be shown as `'3.100'`.
+        - `3.1234` will be shown as `'3.1234'`.
+    :type min_display_digits: int or str
+
     When a float is a quantity associated with an unit of measure, it is important
     to use the right tool to compare or round values with the correct precision.
 
@@ -1609,10 +1625,19 @@ class Float(Field[float]):
 
     type = 'float'
     _digits = None                      # digits argument passed to class initializer
+    _min_display_digits = None
     aggregator = 'sum'
 
-    def __init__(self, string: str | Sentinel = SENTINEL, digits: str | tuple[int, int] | None | Sentinel = SENTINEL, **kwargs):
-        super(Float, self).__init__(string=string, _digits=digits, **kwargs)
+    def __init__(
+        self,
+        string: str | Sentinel = SENTINEL,
+        digits: str | tuple[int, int] | typing.Literal[0, False] | Sentinel | None = SENTINEL,
+        min_display_digits: str | int | Sentinel | None = SENTINEL,
+        **kwargs,
+    ):
+        if digits is SENTINEL and min_display_digits is not SENTINEL:
+            digits = False
+        super().__init__(string=string, _digits=digits, _min_display_digits=min_display_digits, **kwargs)
 
     @property
     def _column_type(self):
@@ -1631,10 +1656,18 @@ class Float(Field[float]):
         else:
             return self._digits
 
+    def get_min_display_digits(self, env):
+        if isinstance(self._min_display_digits, str):
+            return env['decimal.precision'].precision_get(self._min_display_digits)
+        return self._min_display_digits
+
     _related__digits = property(attrgetter('_digits'))
 
     def _description_digits(self, env):
         return self.get_digits(env)
+
+    def _description_min_display_digits(self, env):
+        return self.get_min_display_digits(env)
 
     def convert_to_column(self, value, record, values=None, validate=True):
         value_float = value = float(value or 0.0)
@@ -1949,7 +1982,12 @@ class _String(Field[str | typing.Literal[False]]):
 
         # not dirty fields
         if not dirty:
-            cache.update_raw(records, self, [{lang: cache_value} for _id in records._ids], dirty=False)
+            if self.compute and self.inverse:
+                # invalidate the values in other languages to force their recomputation
+                values = [{lang: cache_value} for _id in records._ids]
+                cache.update_raw(records, self, values, dirty=False)
+            else:
+                cache.update(records, self, itertools.repeat(cache_value), dirty=False)
             return
 
         # model translation
@@ -2576,6 +2614,11 @@ class Binary(Field):
             super().compute_value(records)
 
     def read(self, records):
+        def _encode(s: str | bool) -> bytes | bool:
+            if isinstance(s, str):
+                return s.encode("utf-8")
+            return s
+
         # values are stored in attachments, retrieve them
         assert self.attachment
         domain = [
@@ -2583,9 +2626,9 @@ class Binary(Field):
             ('res_field', '=', self.name),
             ('res_id', 'in', records.ids),
         ]
-        # Note: the 'bin_size' flag is handled by the field 'datas' itself
+        bin_size = records.env.context.get('bin_size')
         data = {
-            att.res_id: att.datas
+            att.res_id: _encode(human_size(att.file_size)) if bin_size else att.datas
             for att in records.env['ir.attachment'].sudo().search(domain)
         }
         records.env.cache.insert_missing(records, self, map(data.get, records._ids))
@@ -3112,7 +3155,7 @@ class _Relational(Field[M], typing.Generic[M]):
                 _logger.warning(env._(
                     "Couldn't generate a company-dependent domain for field %s. "
                     "The model doesn't have a 'company_id' or 'company_ids' field, and isn't company-dependent either.",
-                    f'{self.model_name}.{self.name}'
+                    self.model_name + '.' + self.name,
                 ))
                 return domain
             company_domain = env[self.comodel_name]._check_company_domain(companies=unquote(cids))
@@ -3524,9 +3567,10 @@ class Properties(Field):
             assert self.definition.count(".") == 1
             self.definition_record, self.definition_record_field = self.definition.rsplit('.', 1)
 
-            # make the field computed, and set its dependencies
-            self._depends = (self.definition_record, )
-            self.compute = self._compute
+            if not self.inherited_field:
+                # make the field computed, and set its dependencies
+                self._depends = (self.definition_record, )
+                self.compute = self._compute
 
     def setup_related(self, model):
         super().setup_related(model)
@@ -3728,7 +3772,7 @@ class Properties(Field):
 
     def _compute(self, records):
         """Add the default properties value when the container is changed."""
-        for record in records:
+        for record in records.sudo():
             record[self.name] = self._add_default_values(
                 record.env,
                 {self.name: record[self.name], self.definition_record: record[self.definition_record]},

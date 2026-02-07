@@ -50,7 +50,7 @@ export class AutoResizeImage extends Attachment {
 const newLocal = "img-fluid";
 export class ImageSelector extends FileSelector {
     static mediaSpecificClasses = ["img", newLocal, "o_we_custom_image"];
-    static mediaSpecificStyles = [];
+    static mediaSpecificStyles = ["transform", "width"];
     static mediaExtraClasses = [
         "rounded-circle",
         "rounded",
@@ -407,7 +407,7 @@ export class ImageSelector extends FileSelector {
         const mediaUrl = imgEl.src;
         try {
             const response = await fetch(mediaUrl);
-            if (response.headers.get("content-type") === "image/svg+xml") {
+            if (response.headers.get("content-type").startsWith("image/svg+xml")) {
                 let svg = await response.text();
                 const dynamicColors = {};
                 const combinedColorsRegex = new RegExp(

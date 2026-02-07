@@ -50,19 +50,19 @@ class PortalChatter(http.Controller):
             mode = request.env[thread_model]._get_mail_message_access([thread_id], "create")
             has_react_access = request.env[thread_model]._get_thread_with_access(thread_id, mode, **kwargs)
             can_react = has_react_access
-            if portal_partner := get_portal_partner(
-                thread, kwargs.get("hash"), kwargs.get("pid"), kwargs.get("token")
-            ):
-                store.add(
-                    thread,
-                    {
-                        "portal_partner": Store.one(
-                            portal_partner, fields=["active", "avatar_128", "name", "user"]
-                        )
-                    },
-                    as_thread=True
-                )
             if request.env.user._is_public():
+                if portal_partner := get_portal_partner(
+                    thread, kwargs.get("hash"), kwargs.get("pid"), kwargs.get("token")
+                ):
+                    store.add(
+                        thread,
+                        {
+                            "portal_partner": Store.one(
+                                portal_partner, fields=["active", "avatar_128", "name", "user"]
+                            )
+                        },
+                        as_thread=True,
+                    )
                 can_react = has_react_access and portal_partner
             store.add(
                 thread,
@@ -85,8 +85,11 @@ class PortalChatter(http.Controller):
         domain = expression.AND([
             self._setup_portal_message_fetch_extra_domain(kw),
             field.get_domain_list(model),
-            [('res_id', '=', thread_id), '|', ('body', '!=', ''), ('attachment_ids', '!=', False),
-             ("subtype_id", "=", request.env.ref("mail.mt_comment").id)]
+            self._get_non_empty_message_domain(),
+            [
+                ("res_id", "=", thread_id),
+                ("subtype_id", "=", request.env.ref("mail.mt_comment").id),
+            ],
         ])
 
         # Check access
@@ -108,6 +111,9 @@ class PortalChatter(http.Controller):
             "data": {"mail.message": messages.portal_message_format(options=kw)},
             "messages": Store.many_ids(messages),
         }
+
+    def _get_non_empty_message_domain(self):
+        return ["|", ("body", "!=", ""), ("attachment_ids", "!=", False)]
 
     def _setup_portal_message_fetch_extra_domain(self, data):
         return []

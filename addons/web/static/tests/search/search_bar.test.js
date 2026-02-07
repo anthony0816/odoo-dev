@@ -11,7 +11,7 @@ import {
     queryAllValues,
     queryFirst,
 } from "@odoo/hoot-dom";
-import { Deferred, animationFrame, mockDate, mockTimeZone } from "@odoo/hoot-mock";
+import { Deferred, animationFrame, mockDate, mockTimeZone, mockTouch } from "@odoo/hoot-mock";
 import { Component, onWillUpdateProps, xml } from "@odoo/owl";
 import {
     SELECTORS,
@@ -40,9 +40,9 @@ import {
     validateSearch,
 } from "@web/../tests/web_test_helpers";
 import { browser } from "@web/core/browser/browser";
-import { pick } from "@web/core/utils/objects";
 import { SearchBar } from "@web/search/search_bar/search_bar";
 import { useSearchBarToggler } from "@web/search/search_bar/search_bar_toggler";
+
 class Partner extends models.Model {
     name = fields.Char();
     bar = fields.Many2one({ relation: "partner" });
@@ -225,6 +225,18 @@ test("search input is focused when being toggled", async () => {
     await contains(`button .fa-search`).click();
     expect(".o_searchview input").toHaveCount(1);
     expect(queryFirst`.o_searchview input`).toBeFocused();
+});
+
+test.tags("desktop");
+test("search input is not focused on larger touch devices", async () => {
+    mockTouch(true);
+    await mountWithSearch(SearchBar, {
+        resModel: "partner",
+        searchMenuTypes: [],
+        searchViewId: false,
+    });
+    expect(".o_searchview input").toHaveCount(1);
+    expect(".o_searchview input").not.toBeFocused();
 });
 
 test("search date and datetime fields. Support of timezones", async () => {
@@ -736,13 +748,12 @@ test("many2one_reference fields are supported in search view", async () => {
 
 test("check kwargs of a rpc call with a domain", async () => {
     onRpc("name_search", (params) => {
-        expect(pick(params, "args", "kwargs", "method", "model")).toEqual({
+        expect(params).toMatchObject({
             model: "partner",
             method: "name_search",
             args: [],
             kwargs: {
                 args: [["bool", "=", true]],
-                context: { lang: "en", uid: 7, tz: "taht", allowed_company_ids: [1] },
                 limit: 8 + 1,
                 operator: "ilike",
                 name: "F",

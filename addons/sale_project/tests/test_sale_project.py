@@ -119,6 +119,11 @@ class TestSaleProject(HttpCase, TestSaleProjectCommon):
         self.start_tour('/odoo', 'task_create_sol_tour', login='admin')
 
     def test_project_create_sol_ui(self):
+        self.product_order_service5 = self.env['product.product'].create({
+            'name': 'New Sale order line',
+            'type': 'service',
+            'invoice_policy': 'delivery',
+        })
         self.start_tour('/odoo', 'project_create_sol_tour', login='admin')
 
     def test_sale_order_with_project_task(self):
@@ -137,7 +142,7 @@ class TestSaleProject(HttpCase, TestSaleProjectCommon):
         })
 
         so_line_order_task_in_global = SaleOrderLine.create({
-            'name': f"{self.product_order_service2.name}\n[TEST1]\nGlobal project",
+            'name': f"{self.product_order_service2.display_name}\nDescription for global task.",
             'product_id': self.product_order_service2.id,
             'product_uom_qty': 10,
             'order_id': sale_order.id,
@@ -145,7 +150,7 @@ class TestSaleProject(HttpCase, TestSaleProjectCommon):
 
         self.product_order_service3.description_sale = "Task in New Project"
         so_line_order_new_task_new_project = SaleOrderLine.create({
-            'name': f"{self.product_order_service3.display_name}\n[TEST2]\nNew project",
+            'name': f"{self.product_order_service3.display_name}\nDescription for new project task.",
             'product_id': self.product_order_service3.id,
             'product_uom_qty': 10,
             'order_id': sale_order.id,
@@ -171,29 +176,29 @@ class TestSaleProject(HttpCase, TestSaleProjectCommon):
         self.assertEqual(self.project_global.tasks.sale_line_id, so_line_order_task_in_global, "Global project's task should be linked to so line")
         self.assertEqual(
             so_line_order_task_in_global.task_id.name,
-            f"{sale_order.name} - [TEST1]",
-            "Task name in global project should include SO name & partial line description",
+            f"{sale_order.name} - Description for global task.",
+            "Task name in global project should include SO name and the single-line SOL description.",
         )
-        self.assertEqual(
-            str(so_line_order_task_in_global.task_id.description),
-            '<p>Global project</p>',
+        self.assertFalse(
+            so_line_order_task_in_global.task_id.description,
+            "Task description should be empty for single-line SOL descriptions."
         )
         #  service_tracking 'task_in_project'
         self.assertTrue(so_line_order_new_task_new_project.project_id, "Sales order line should be linked to newly created project")
         self.assertTrue(so_line_order_new_task_new_project.task_id, "Sales order line should be linked to newly created task")
         self.assertEqual(
             so_line_order_new_task_new_project.task_id.name,
-            "[TEST2]",
-            "Task name in new project should only include partial line description",
+            "Description for new project task.",
+            "Task name should be the single-line SOL description.",
         )
-        self.assertEqual(
-            str(so_line_order_new_task_new_project.task_id.description),
-            '<p>New project</p>',
+        self.assertFalse(
+            so_line_order_new_task_new_project.task_id.description,
+            "Task description should be empty for single-line SOL descriptions."
         )
         self.assertEqual(
             so_line_order_new_task_new_project2.task_id.name,
-            self.product_order_service3.display_name,
-            "Task name created from a SOL with default description should use the product name",
+            self.product_order_service3.description_sale,
+            "Task name should be the product's default sales description."
         )
         # service_tracking 'project_only'
         self.assertFalse(so_line_order_only_project.task_id, "Task should not be created")
@@ -613,7 +618,7 @@ class TestSaleProject(HttpCase, TestSaleProjectCommon):
         sale_order.action_confirm()
         self.assertEqual(sale_order.order_line.analytic_distribution, expected_analytic_distribution)
 
-    def test_include_archived_projects_in_stat_btn_related_view(self):
+    def test_exclude_archived_projects_in_stat_btn_related_view(self):
         """Checks if the project stat-button action includes both archived and active projects."""
         # Setup
         project_A = self.env['project.project'].create({'name': 'Project_A'})
@@ -668,11 +673,15 @@ class TestSaleProject(HttpCase, TestSaleProjectCommon):
         # Check if button action includes both projects BEFORE archivization
         action = sale_order.action_view_project_ids()
         self.assertEqual(len(get_project_ids_from_action_domain(action)), 2, "Domain should contain 2 projects.")
+        self.assertEqual(sale_order.project_count, 2, "Expected 2 projects linked to the sale order.")
 
         # Check if button action includes both projects AFTER archivization
         project_B.write({'active': False})
+        sale_order._compute_project_ids()
+        self.assertEqual(sale_order.project_count, 1, "Expected 1 project linked to the sale order.")
+
         action = sale_order.action_view_project_ids()
-        self.assertEqual(len(get_project_ids_from_action_domain(action)), 2, "Domain should contain 2 projects. (one archived, one not)")
+        self.assertEqual(len(get_project_ids_from_action_domain(action)), 1, "Domain should contain 1 active project.")
 
     def test_sale_order_line_view_form_editable(self):
         """ Check the behavior of the form view editable of `sale.order.line` introduced in that module
@@ -1320,3 +1329,18 @@ class TestSaleProject(HttpCase, TestSaleProjectCommon):
         so.action_confirm()
         self.assertFalse(self.product_order_service2.project_id.task_ids)
         self.assertFalse(sol.task_id)
+
+    def test_allocated_hours_manual_delivery_service(self):
+        """
+        Test that allocated_hours match the quantity ordered on creation
+        when the service product has 'delivered_manual' service policy.
+        """
+        self.product_service_delivered_manual.service_tracking = 'task_in_project'
+        so = self.env['sale.order'].create({'partner_id': self.partner.id})
+        sol = self.env['sale.order.line'].create({
+            'order_id': so.id,
+            'product_id': self.product_service_delivered_manual.id,
+            'product_uom_qty': 10,
+        })
+        so.action_confirm()
+        self.assertEqual(sol.task_id.allocated_hours, 10, "The allocated hours should be 10.")

@@ -256,3 +256,29 @@ registry.category("web_tour.tours").add("SelfOrderOrderNumberTour", {
         Utils.checkIsNoBtn("Ok"),
     ],
 });
+
+registry.category("web_tour.tours").add("self_order_mobile_0_price_order", {
+    steps: () =>
+        [
+            Utils.checkIsNoBtn("My Order"),
+            Utils.clickBtn("Order Now"),
+            LandingPage.selectLocation("Eat In"),
+            ProductPage.clickProduct("Ketchup"),
+            Utils.clickBtn("Order"),
+            CartPage.checkProduct("Ketchup", "0", "1"),
+            Utils.clickBtn("Pay"),
+            CartPage.selectTable("3"),
+            ConfirmationPage.isShown(),
+            Utils.clickBtn("Ok"),
+            Utils.clickBtn("My Order"),
+        ].flat(),
+});
+
+registry.category("web_tour.tours").add("self_order_mobile_no_access_token", {
+    steps: () =>
+        [
+            Utils.checkIsNoBtn("My Order"),
+            Utils.clickBtn("Order Now"),
+            Utils.negateStep(Utils.checkBtn("Order")),
+        ].flat(),
+});
