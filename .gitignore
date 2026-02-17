@@ -52,3 +52,6 @@ package.json
 /man/
 /share/
 /src/
+
+# Proyectos del trabajo 
+/modules 
