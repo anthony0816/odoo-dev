@@ -5,7 +5,7 @@ python odoo-bin -c odoo.conf
 
 ### create the base for building a module
 ```  bash
-python odoo-bin scaffold school modules
+python odoo-bin scaffold custom_module modules
 ```
 
 ### create and .po for a determin language translation 
